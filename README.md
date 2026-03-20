@@ -135,6 +135,45 @@ Transformer Encoder (6 layers, 8 heads)
 Quality Score (0-4)
 ```
 
+### Step-by-Step Code Walkthrough
+
+Here is exactly how the architectural overview maps to the codebase sequentially, step-by-step:
+
+#### 1. Data Preparation & Multi-Scale Pyramid (`dataset.py`)
+- **Action:** Load the 512×512 HD-CT slices, normalize them, and run them through multi-scale resizing (224×224 and 384×384 scales).
+- **Code implementation:** `LDCTDataset` class inside `dataset.py`.
+- **Key functions:** `__getitem__()` uses `transforms.Resize()` to prepare the varying scales and dynamically extract the resolution metadata.
+
+#### 2. Patch Tokenization & Grayscale to RGB (`model.py`)
+- **Action:** Grayscale representations are repeated across 3 channels to mimic RGB to be compatible with standard Vision Transformers. Then, non-overlapping 32×32 patches are extracted from each resized image scale.
+- **Code implementation:** `PatchEmbedding` class inside `model.py`.
+- **Key functions:** `forward()` repeats the channel dimension (`x.repeat(1, 3, 1, 1)`) and applies a `nn.Conv2d(3, embed_dim, kernel_size=32, stride=32)` to generate patch tokens.
+
+#### 3. Hash Positional Encoding (`model.py`)
+- **Action:** Since image sequences of patches vary widely dynamically depending on the input scale sizes, standard learned positional encodings won't work perfectly. CT-MUSIQ uses a 2D hash-based spatial coordinate approach to inject positional context.
+- **Code implementation:** `HashPositionalEncoding` class inside `model.py`.
+- **Key functions:** `forward()` hashes spatial `(x, y)` coordinates and `scale_idx` into the embedding dimension to be added directly to the spatial tokens.
+
+#### 4. Prepend [CLS] Token & Transformer Encoder (`model.py`)
+- **Action:** A learnable Global `[CLS]` token is concatenated to the front of all patch tokens. Then they are passed through standard Transformer blocks (ViT-B backbone) pre-trained on ImageNet.
+- **Code implementation:** Pretrained ViT fetching and transformation blocks in `CTMUSIQ` class inside `model.py`.
+- **Key functions:** `CTMUSIQ.forward()` manages token sequencing. It passes the combined representations to standard multi-head self-attention transformer layers. 
+
+#### 5. Quality Prediction Heads (`model.py`)
+- **Action:** CT-MUSIQ predicts both per-scale quality scores predicting scale-level quality, as well as a final global predicted score (the master output).
+- **Code implementation:** The specific scale and global linear heads in the `CTMUSIQ.__init__()` and `CTMUSIQ.forward()`.
+- **Key functions:** `self.global_head` processes the output of the `[CLS]` token. `self.scale_heads` processes the averaged spatial tokens from each individual scale separately.
+
+#### 6. Scale-Consistency & Aggregate Quality Objective (`loss.py`)
+- **Action:** A mixed loss evaluates both the exact numerical target Mean Squared Error (MSE), as well as a distributional (KL-Divergence) consistency enforcing that scales should theoretically predict nearly identical quality ranges.
+- **Code implementation:** `CTMUSIQLoss` and `ScoreToDistribution` inside `loss.py`.
+- **Key functions:** Computes standard Euclidean loss (`nn.MSELoss`) over global/scale nodes, as well as divergence via `score_to_dist` generating Gaussian target distributions.
+
+#### 7. Full Training & Validation Loop (`train.py`)
+- **Action:** Forward pass sequences loop infinitely over epochs, coordinating metric collections, backpropagation, Automatic Mixed Precision (AMP), gradient clipping, and cosine learning rate adjustments.
+- **Code implementation:** The main orchestrator loops inside `train.py`.
+- **Key functions:** `train_epoch()`, `validate()`, and metrics aggregation are tightly coupled with early stopping heuristics.
+
 ### Detailed Architecture
 
 #### 1. Multi-Scale Pyramid
