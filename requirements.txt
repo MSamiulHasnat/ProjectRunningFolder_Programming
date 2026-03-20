@@ -1,0 +1,31 @@
+# =============================================================================
+# CT-MUSIQ — Requirements
+# =============================================================================
+# Core deep-learning framework (CUDA support assumed via separate install)
+torch>=2.1.0
+torchvision>=0.16.0
+
+# Numerical / scientific computing
+numpy
+scipy
+
+# Machine learning utilities (e.g. train_test_split, metrics)
+scikit-learn
+
+# Image I/O — needed to load .tif brain CT slices
+pillow
+
+# Tabular data handling and CSV export
+pandas
+
+# Plotting (training curves, scatter plots, score histograms)
+matplotlib
+
+# Progress bars for training loops
+tqdm
+
+# Flexible tensor manipulation (rearrange, repeat, etc.)
+einops
+
+# Pretrained Vision Transformer weights (vit_base_patch32_224)
+timm
