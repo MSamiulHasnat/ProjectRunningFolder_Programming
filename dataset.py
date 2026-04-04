@@ -162,8 +162,10 @@ class LDCTDataset(Dataset):
         
         Augmentations are kept mild because CT noise is diagnostically meaningful:
           - Random horizontal flip (p=0.5)
+                    - Random rotation ±5 degrees
           - Random crop retaining 85-100% of area, resize back
           - Brightness/contrast jitter ±0.05 only
+                    - Mild additive Gaussian noise
         
         Args:
             image: numpy array of shape (H, W), values in [0, 1]
@@ -177,6 +179,16 @@ class LDCTDataset(Dataset):
         # Random horizontal flip (p=0.5)
         if np.random.random() < 0.5:
             img_pil = TF.hflip(img_pil)
+
+        # Small random rotation (±5°) to improve geometric robustness
+        if np.random.random() < 0.5:
+            angle = float(np.random.uniform(-5.0, 5.0))
+            img_pil = TF.rotate(
+                img_pil,
+                angle=angle,
+                interpolation=TF.InterpolationMode.BILINEAR,
+                fill=0
+            )
         
         # Random crop and resize back
         # Crop 85-100% of area to preserve most of the brain structure
@@ -202,6 +214,11 @@ class LDCTDataset(Dataset):
         
         # Convert back to numpy float32 in [0, 1]
         image_aug = np.array(img_pil, dtype=np.float32) / 255.0
+
+        # Mild Gaussian noise to simulate scanner noise variability
+        noise_std = float(np.random.uniform(0.005, 0.02))
+        noise = np.random.normal(0.0, noise_std, size=image_aug.shape).astype(np.float32)
+        image_aug = np.clip(image_aug + noise, 0.0, 1.0)
         
         return image_aug
     

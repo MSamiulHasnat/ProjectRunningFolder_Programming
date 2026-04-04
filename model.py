@@ -9,7 +9,7 @@ Architecture Overview:
   1. Patch Embedding: Conv2d(3, 768, 32, 32) — loads pretrained ViT-B/32 weights
   2. Hash-based Positional Encoding: Sum of 3 nn.Embedding lookups
      (scale_idx, row_idx, col_idx) — handles variable multi-scale sequences
-  3. Transformer Encoder: 6 layers, 8 heads, d_model=768, FFN=3072
+  3. Transformer Encoder: 12 layers, 8 heads, d_model=768, FFN=3072
   4. Global [CLS] Head: Linear(768, 1) → final quality score
   5. Per-scale Heads: Average pool per scale → Linear(768, 1) → scale scores
 

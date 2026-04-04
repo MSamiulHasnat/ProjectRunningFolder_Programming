@@ -115,9 +115,9 @@ PATCH_SIZE = 32      # Side length of each square patch (pixels)
 
 D_MODEL    = 768   # Embedding dimension (must match ViT-B/32 pretrained weights)
 NUM_HEADS  = 8     # Number of attention heads in the transformer encoder
-NUM_LAYERS = 6     # Number of transformer encoder layers
+NUM_LAYERS = 12    # Number of transformer encoder layers (full ViT-B depth)
 FFN_DIM    = 3072  # Feed-forward network hidden dimension (4 × d_model)
-DROPOUT    = 0.1   # Dropout rate in transformer layers
+DROPOUT    = 0.05  # Dropout rate in transformer layers (reduced for small dataset)
 
 # Maximum grid size for hash-based positional encoding.
 # At 384 / 32 = 12 patches per side, we need indices 0–11.
@@ -130,16 +130,19 @@ MAX_GRID_SIZE = 13
 # =============================================================================
 
 BATCH_SIZE = 4     # Default batch size — fits within 6 GB VRAM with AMP
-LR         = 1e-4  # Base learning rate for Stage 2 (full fine-tuning)
-LR_STAGE1  = 1e-3  # Higher LR for Stage 1 (only CT-specific layers trained)
+LR         = 5e-5  # Base learning rate for Stage 2 (lower for stable fine-tuning)
+LR_STAGE1  = 3e-4  # Stage 1 LR (reduced from 1e-3 for stability)
 LR_MIN     = 1e-6  # Minimum LR for cosine annealing scheduler
-EPOCHS     = 50    # Maximum number of training epochs
-PATIENCE   = 10    # Early stopping patience (epochs without val improvement)
+EPOCHS     = 100   # Maximum number of training epochs (extended for better convergence)
+PATIENCE   = 20    # Early stopping patience (increased for 100-epoch extended run)
 
 # Two-stage training schedule:
 #   Stage 1 (epochs 1–STAGE1_EPOCHS): freeze transformer encoder, train heads only
 #   Stage 2 (epochs STAGE1_EPOCHS+1 – EPOCHS): unfreeze all, cosine LR decay
 STAGE1_EPOCHS = 5  # Number of warm-up epochs with frozen encoder
+
+# LR warmup at Stage 2 start (linear warmup over this many epochs)
+STAGE2_WARMUP_EPOCHS = 3
 
 # Gradient clipping max norm (prevents exploding gradients with mixed precision)
 MAX_GRAD_NORM = 1.0
@@ -151,7 +154,7 @@ MAX_GRAD_NORM = 1.0
 # and the global prediction head.  Scores are converted to soft probability
 # distributions over NUM_BINS bins using a Gaussian kernel with width SIGMA.
 
-LAMBDA_KL = 0.1   # Weight of KL loss in the total loss (L_total = L_mse + λ·L_kl)
+LAMBDA_KL = 0.02  # Weight of KL loss (reduced to lower noise from scale disagreement)
 NUM_BINS  = 20     # Number of bins for the soft score distribution
 SIGMA     = 0.5    # Gaussian kernel width for score → distribution conversion
 

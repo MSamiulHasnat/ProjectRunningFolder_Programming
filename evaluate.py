@@ -1,22 +1,20 @@
 """
-evaluate.py — CT-MUSIQ Evaluation Script
-==========================================
+evaluate.py — Model Evaluation Script
+======================================
 
-Evaluate trained CT-MUSIQ model on the test set.
+Evaluate trained models on the test set.
 Computes metrics matching the LDCTIQAC 2023 leaderboard format:
   - PLCC: Pearson Linear Correlation Coefficient
   - SROCC: Spearman Rank-Order Correlation Coefficient
   - KROCC: Kendall Rank-Order Correlation Coefficient
   - Aggregate: |PLCC| + |SROCC| + |KROCC|
 
-Outputs:
-  1. Console summary with metrics
-  2. CSV file with per-image predictions
-  3. Comparison table with Lee et al. 2025 published results
+Works with CT-MUSIQ and one combined baseline method.
 
 Usage:
-  python evaluate.py                        # Evaluate best checkpoint
-  python evaluate.py --checkpoint path.pth  # Evaluate specific checkpoint
+  python evaluate.py                                    # Evaluate CT-MUSIQ
+    python evaluate.py --model agaldran_combo            # Evaluate combined baseline
+  python evaluate.py --model ct_musiq --checkpoint path.pth
 
 Author: M Samiul Hasnat, Sichuan University
 Project: CT-MUSIQ — Undergraduate Thesis
@@ -36,6 +34,7 @@ from scipy.stats import pearsonr, spearmanr, kendalltau
 import config
 from dataset import create_dataloaders
 from model import create_model, CTMUSIQ
+from get_model import get_model
 
 
 def compute_metrics(predictions: np.ndarray, targets: np.ndarray) -> Dict[str, float]:
@@ -66,19 +65,61 @@ def compute_metrics(predictions: np.ndarray, targets: np.ndarray) -> Dict[str, f
     }
 
 
+def build_baseline_images_from_patches(
+    patches: torch.Tensor,
+    coords: torch.Tensor,
+    target_scale_idx: int = 0
+) -> torch.Tensor:
+    """
+    Reconstruct one full image per sample from patch tokens of a given scale.
+
+    Baseline models need 4D images [B, 3, H, W], while this project dataloader
+    provides patch tokens [B, N, 3, P, P] plus coordinates [B, N, 3].
+    We reconstruct using scale 0 patches (default 224x224 path).
+    """
+    device = patches.device
+    bsz, _, channels, patch_h, patch_w = patches.shape
+    images = []
+
+    for b in range(bsz):
+        mask = coords[b, :, 0] == target_scale_idx
+        p = patches[b][mask]
+        c = coords[b][mask]
+
+        if p.numel() == 0:
+            raise ValueError("No patches found for baseline reconstruction at selected scale")
+
+        max_row = int(c[:, 1].max().item()) + 1
+        max_col = int(c[:, 2].max().item()) + 1
+        img = torch.zeros((channels, max_row * patch_h, max_col * patch_w), device=device, dtype=patches.dtype)
+
+        for i in range(p.shape[0]):
+            row = int(c[i, 1].item())
+            col = int(c[i, 2].item())
+            r0 = row * patch_h
+            c0 = col * patch_w
+            img[:, r0:r0 + patch_h, c0:c0 + patch_w] = p[i]
+
+        images.append(img)
+
+    return torch.stack(images, dim=0)
+
+
 @torch.no_grad()
 def evaluate_model(
-    model: CTMUSIQ,
+    model,
     test_loader,
-    device: torch.device
+    device: torch.device,
+    model_type: str = 'ct_musiq'
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Run model on test set and collect predictions.
     
     Args:
-        model: Trained CT-MUSIQ model
+        model: Trained model
         test_loader: Test data loader
         device: Device to run on
+        model_type: Type of model ('ct_musiq', 'agaldran_combo')
         
     Returns:
         Tuple of (predictions, targets, image_ids)
@@ -91,13 +132,25 @@ def evaluate_model(
     
     for batch in test_loader:
         # Move data to device
-        patches = batch['patches'].to(device)
-        coords = batch['coords'].to(device)
-        scores = batch['score'].to(device)
-        image_ids = batch['image_id']
-        
-        # Forward pass
-        output = model(patches, coords)
+        if model_type == 'ct_musiq':
+            # CT-MUSIQ uses patches and coordinates
+            patches = batch['patches'].to(device)
+            coords = batch['coords'].to(device)
+            scores = batch['score'].to(device)
+            image_ids = batch['image_id']
+            
+            # Forward pass
+            output = model(patches, coords)
+        else:
+            # Baseline model expects full images; reconstruct from scale-0 patches
+            patches = batch['patches'].to(device)
+            coords = batch['coords'].to(device)
+            images = build_baseline_images_from_patches(patches, coords, target_scale_idx=0)
+            scores = batch['score'].to(device)
+            image_ids = batch['image_id']
+            
+            # Forward pass
+            output = model(images, None)
         
         # Collect predictions and targets
         predictions = output['score'].squeeze(-1).cpu().numpy()
@@ -209,6 +262,7 @@ def save_results_csv(metrics: Dict[str, float], save_path: str) -> None:
 
 
 def evaluate(
+    model_type: str = 'ct_musiq',
     checkpoint_path: Optional[str] = None,
     batch_size: int = config.BATCH_SIZE
 ) -> Dict[str, float]:
@@ -216,15 +270,16 @@ def evaluate(
     Main evaluation function.
     
     Args:
+        model_type: Type of model ('ct_musiq', 'agaldran_combo')
         checkpoint_path: Path to model checkpoint (default: best_model.pth)
         batch_size: Batch size for evaluation
         
     Returns:
         Dictionary with computed metrics
     """
-    print("="*60)
-    print("CT-MUSIQ Evaluation")
-    print("="*60)
+    print("="*70)
+    print(f"{model_type.upper()} Evaluation")
+    print("="*70)
     
     # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -232,11 +287,15 @@ def evaluate(
     
     # Determine checkpoint path
     if checkpoint_path is None:
-        checkpoint_path = config.BEST_MODEL_PATH
+        if model_type == 'ct_musiq':
+            checkpoint_path = config.BEST_MODEL_PATH
+        else:
+            model_results_dir = os.path.join(config.RESULTS_DIR, model_type)
+            checkpoint_path = os.path.join(model_results_dir, f'{model_type}_best.pth')
     
     if not os.path.exists(checkpoint_path):
         print(f"\n✗ Checkpoint not found: {checkpoint_path}")
-        print("  Please train the model first: python train.py")
+        print(f"  Please train {model_type} first: python train.py --model {model_type}")
         sys.exit(1)
     
     print(f"Checkpoint: {checkpoint_path}")
@@ -245,14 +304,11 @@ def evaluate(
     print("\nLoading checkpoint...")
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
-    # Get config from checkpoint
-    checkpoint_config = checkpoint.get('config', {})
-    scales = checkpoint_config.get('scales', config.SCALES)
-    num_scales = len(scales)
+    # Get model type from checkpoint if available
+    checkpoint_model_type = checkpoint.get('model_type', model_type)
     
     print(f"  Epoch: {checkpoint['epoch'] + 1}")
     print(f"  Best aggregate: {checkpoint['best_aggregate']:.4f}")
-    print(f"  Scales: {scales}")
     
     # Create test data loader
     print("\nCreating test data loader...")
@@ -264,12 +320,20 @@ def evaluate(
     print(f"  Test images: {len(test_loader.dataset)}")
     
     # Create model
-    print("\nCreating CT-MUSIQ model...")
-    model = create_model(
-        num_scales=num_scales,
-        pretrained=False,  # We'll load from checkpoint
-        device=device
-    )
+    print(f"\nCreating {model_type.upper()} model...")
+    if model_type == 'ct_musiq':
+        checkpoint_config = checkpoint.get('config', {})
+        scales = checkpoint_config.get('scales', config.SCALES)
+        num_scales = len(scales)
+        
+        model = create_model(
+            num_scales=num_scales,
+            pretrained=False,  # We'll load from checkpoint
+            device=device
+        )
+    else:
+        model = get_model(model_type, pretrained=False)
+        model = model.to(device)
     
     # Load model weights
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -277,15 +341,17 @@ def evaluate(
     
     # Evaluate
     print("\nRunning evaluation on test set...")
-    predictions, targets, image_ids = evaluate_model(model, test_loader, device)
+    predictions, targets, image_ids = evaluate_model(
+        model, test_loader, device, model_type=model_type
+    )
     
     # Compute metrics
     metrics = compute_metrics(predictions, targets)
     
     # Print results
-    print("\n" + "="*60)
+    print("\n" + "="*70)
     print("TEST SET RESULTS")
-    print("="*60)
+    print("="*70)
     print(f"\n  PLCC:      {metrics['PLCC']:.4f}  (p={metrics['PLCC_p']:.2e})")
     print(f"  SROCC:     {metrics['SROCC']:.4f}  (p={metrics['SROCC_p']:.2e})")
     print(f"  KROCC:     {metrics['KROCC']:.4f}  (p={metrics['KROCC_p']:.2e})")
@@ -310,15 +376,24 @@ def evaluate(
     # Save results
     print("\nSaving results...")
     
-    # Create results directory
+    # Create results directory and model-specific subdirectory
     os.makedirs(config.RESULTS_DIR, exist_ok=True)
+    if model_type != 'ct_musiq':
+        model_results_dir = os.path.join(config.RESULTS_DIR, model_type)
+        os.makedirs(model_results_dir, exist_ok=True)
     
     # Save per-image predictions
-    predictions_path = os.path.join(config.RESULTS_DIR, "test_predictions.csv")
+    predictions_path = os.path.join(
+        config.RESULTS_DIR if model_type == 'ct_musiq' else os.path.join(config.RESULTS_DIR, model_type),
+        f"{model_type}_predictions.csv"
+    )
     save_predictions_csv(predictions, targets, image_ids, predictions_path)
     
     # Save results table
-    results_path = config.TEST_RESULTS_CSV
+    results_path = os.path.join(
+        config.RESULTS_DIR if model_type == 'ct_musiq' else os.path.join(config.RESULTS_DIR, model_type),
+        f"{model_type}_results.csv"
+    )
     save_results_csv(metrics, results_path)
     
     print("\n✓ Evaluation complete!")
@@ -330,16 +405,32 @@ def main():
     """
     Main entry point with argument parsing.
     """
-    parser = argparse.ArgumentParser(description='Evaluate CT-MUSIQ model')
-    parser.add_argument('--checkpoint', type=str, default=None,
-                        help='Path to checkpoint (default: best_model.pth)')
-    parser.add_argument('--batch_size', type=int, default=config.BATCH_SIZE,
-                        help='Batch size for evaluation')
+    parser = argparse.ArgumentParser(description='Evaluate trained models')
+    parser.add_argument(
+        '--model',
+        type=str,
+        choices=['ct_musiq', 'agaldran_combo'],
+        default='ct_musiq',
+        help='Model to evaluate (default: ct_musiq)'
+    )
+    parser.add_argument(
+        '--checkpoint',
+        type=str,
+        default=None,
+        help='Path to checkpoint (default: auto-detected)'
+    )
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        default=config.BATCH_SIZE,
+        help='Batch size for evaluation'
+    )
     
     args = parser.parse_args()
     
     # Run evaluation
     metrics = evaluate(
+        model_type=args.model,
         checkpoint_path=args.checkpoint,
         batch_size=args.batch_size
     )

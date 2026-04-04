@@ -12,6 +12,7 @@ venv/
 venv_cuda/
 .venv/
 env/
+.venv-1/
 
 # Packaging / build
 build/

@@ -61,6 +61,7 @@ import config
 from dataset import create_dataloaders
 from model import create_model, CTMUSIQ
 from loss import create_criterion, CTMUSIQLoss
+from get_model import get_model
 
 # Import evaluation metrics (will be created in evaluate.py)
 # For now, we'll define basic metric computation here
@@ -106,15 +107,18 @@ def set_seed(seed: int = config.SEED) -> None:
     torch.backends.cudnn.benchmark = False
 
 
-def freeze_encoder(model: CTMUSIQ) -> None:
+def freeze_encoder(model, model_type: str = 'ct_musiq') -> None:
     """
-    Freeze transformer encoder weights for Stage 1 training.
-    
-    Only patch_embed, pos_encoding, and prediction heads remain trainable.
+    Freeze encoder weights for Stage 1 training (CT-MUSIQ only).
     
     Args:
-        model: CT-MUSIQ model
+        model: Model instance
+        model_type: Type of model
     """
+    if model_type != 'ct_musiq':
+        # Baseline models don't have staged training
+        return
+    
     # Freeze transformer encoder
     for param in model.transformer.parameters():
         param.requires_grad = False
@@ -126,13 +130,18 @@ def freeze_encoder(model: CTMUSIQ) -> None:
     print("  Trainable: patch_embed, pos_encoding, prediction heads")
 
 
-def unfreeze_encoder(model: CTMUSIQ) -> None:
+def unfreeze_encoder(model, model_type: str = 'ct_musiq') -> None:
     """
-    Unfreeze all weights for Stage 2 training.
+    Unfreeze all weights for Stage 2 training (CT-MUSIQ only).
     
     Args:
-        model: CT-MUSIQ model
+        model: Model instance
+        model_type: Type of model
     """
+    if model_type != 'ct_musiq':
+        # Baseline models don't have staged training
+        return
+    
     for param in model.parameters():
         param.requires_grad = True
     
@@ -152,14 +161,93 @@ def get_trainable_params(model: CTMUSIQ) -> list:
     return [p for p in model.parameters() if p.requires_grad]
 
 
+class ModelEMA:
+    """
+    Exponential moving average of model weights for stabler validation.
+    """
+
+    def __init__(self, model: nn.Module, decay: float = 0.999):
+        self.decay = decay
+        self.shadow = {}
+        self.backup = {}
+        for name, param in model.state_dict().items():
+            if torch.is_floating_point(param):
+                self.shadow[name] = param.detach().clone()
+
+    @torch.no_grad()
+    def update(self, model: nn.Module) -> None:
+        for name, param in model.state_dict().items():
+            if name in self.shadow and torch.is_floating_point(param):
+                self.shadow[name].mul_(self.decay).add_(param.detach(), alpha=(1.0 - self.decay))
+
+    @torch.no_grad()
+    def apply_shadow(self, model: nn.Module) -> None:
+        self.backup = {}
+        state = model.state_dict()
+        for name, shadow_param in self.shadow.items():
+            self.backup[name] = state[name].detach().clone()
+            state[name].copy_(shadow_param)
+
+    @torch.no_grad()
+    def restore(self, model: nn.Module) -> None:
+        if not self.backup:
+            return
+        state = model.state_dict()
+        for name, backup_param in self.backup.items():
+            state[name].copy_(backup_param)
+        self.backup = {}
+
+
+def build_baseline_images_from_patches(
+    patches: torch.Tensor,
+    coords: torch.Tensor,
+    target_scale_idx: int = 0
+) -> torch.Tensor:
+    """
+    Reconstruct one full image per sample from patch tokens of a given scale.
+
+    Baseline models need 4D images [B, 3, H, W], while this project dataloader
+    provides patch tokens [B, N, 3, P, P] plus coordinates [B, N, 3].
+    We reconstruct using scale 0 patches (default 224x224 path).
+    """
+    device = patches.device
+    bsz, _, channels, patch_h, patch_w = patches.shape
+    images = []
+
+    for b in range(bsz):
+        mask = coords[b, :, 0] == target_scale_idx
+        p = patches[b][mask]  # [Ns, 3, P, P]
+        c = coords[b][mask]   # [Ns, 3]
+
+        if p.numel() == 0:
+            raise ValueError("No patches found for baseline reconstruction at selected scale")
+
+        max_row = int(c[:, 1].max().item()) + 1
+        max_col = int(c[:, 2].max().item()) + 1
+        img = torch.zeros((channels, max_row * patch_h, max_col * patch_w), device=device, dtype=patches.dtype)
+
+        for i in range(p.shape[0]):
+            row = int(c[i, 1].item())
+            col = int(c[i, 2].item())
+            r0 = row * patch_h
+            c0 = col * patch_w
+            img[:, r0:r0 + patch_h, c0:c0 + patch_w] = p[i]
+
+        images.append(img)
+
+    return torch.stack(images, dim=0)
+
+
 def train_one_epoch(
-    model: CTMUSIQ,
+    model,
     train_loader,
-    criterion: CTMUSIQLoss,
+    criterion,
     optimizer: optim.Optimizer,
     scaler: GradScaler,
     device: torch.device,
     epoch: int,
+    model_type: str = 'ct_musiq',
+    ema_model: Optional[ModelEMA] = None,
     gradient_accumulation_steps: int = 1,
     use_amp: bool = True
 ) -> Dict[str, float]:
@@ -167,13 +255,15 @@ def train_one_epoch(
     Train for one epoch.
     
     Args:
-        model: CT-MUSIQ model
+        model: Model to train
         train_loader: Training data loader
         criterion: Loss function
         optimizer: Optimizer
         scaler: GradScaler for mixed precision (ignored if use_amp=False)
         device: Device to train on
         epoch: Current epoch number
+        model_type: Type of model ('ct_musiq', 'agaldran_combo')
+        ema_model: EMA helper to smooth weights during training
         gradient_accumulation_steps: Number of steps to accumulate gradients
         use_amp: Whether to use automatic mixed precision (requires CUDA)
         
@@ -189,14 +279,24 @@ def train_one_epoch(
     
     for batch_idx, batch in enumerate(train_loader):
         # Move data to device
-        patches = batch['patches'].to(device)
-        coords = batch['coords'].to(device)
-        scores = batch['score'].to(device)
+        if model_type == 'ct_musiq':
+            # CT-MUSIQ uses patches and coordinates
+            patches = batch['patches'].to(device)
+            coords = batch['coords'].to(device)
+            scores = batch['score'].to(device)
+            model_input = (patches, coords)
+        else:
+            # Baseline model expects full images; reconstruct from scale-0 patches
+            patches = batch['patches'].to(device)
+            coords = batch['coords'].to(device)
+            images = build_baseline_images_from_patches(patches, coords, target_scale_idx=0)
+            scores = batch['score'].to(device)
+            model_input = (images, None)  # Second arg (coords) is ignored for baselines
         
         # Forward pass (with or without mixed precision)
         if use_amp:
             with autocast('cuda'):
-                output = model(patches, coords)
+                output = model(*model_input)
                 losses = criterion(output, scores)
                 loss = losses['total'] / gradient_accumulation_steps
             
@@ -218,9 +318,11 @@ def train_one_epoch(
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
+                if ema_model is not None:
+                    ema_model.update(model)
         else:
             # Standard training (no mixed precision)
-            output = model(patches, coords)
+            output = model(*model_input)
             losses = criterion(output, scores)
             loss = losses['total'] / gradient_accumulation_steps
             
@@ -238,6 +340,8 @@ def train_one_epoch(
                 # Optimizer step
                 optimizer.step()
                 optimizer.zero_grad()
+                if ema_model is not None:
+                    ema_model.update(model)
         
         # Accumulate losses
         total_loss += losses['total'].item()
@@ -257,19 +361,21 @@ def train_one_epoch(
 
 @torch.no_grad()
 def validate(
-    model: CTMUSIQ,
+    model,
     val_loader,
-    criterion: CTMUSIQLoss,
-    device: torch.device
+    criterion,
+    device: torch.device,
+    model_type: str = 'ct_musiq'
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     """
     Validate model on validation set.
     
     Args:
-        model: CT-MUSIQ model
+        model: Model to validate
         val_loader: Validation data loader
         criterion: Loss function
         device: Device to validate on
+        model_type: Type of model ('ct_musiq', 'agaldran_combo')
         
     Returns:
         Tuple of (loss_dict, metrics_dict)
@@ -286,12 +392,22 @@ def validate(
     
     for batch in val_loader:
         # Move data to device
-        patches = batch['patches'].to(device)
-        coords = batch['coords'].to(device)
-        scores = batch['score'].to(device)
+        if model_type == 'ct_musiq':
+            # CT-MUSIQ uses patches and coordinates
+            patches = batch['patches'].to(device)
+            coords = batch['coords'].to(device)
+            scores = batch['score'].to(device)
+            model_input = (patches, coords)
+        else:
+            # Baseline model expects full images; reconstruct from scale-0 patches
+            patches = batch['patches'].to(device)
+            coords = batch['coords'].to(device)
+            images = build_baseline_images_from_patches(patches, coords, target_scale_idx=0)
+            scores = batch['score'].to(device)
+            model_input = (images, None)
         
         # Forward pass (no mixed precision needed for validation)
-        output = model(patches, coords)
+        output = model(*model_input)
         losses = criterion(output, scores)
         
         # Accumulate losses
@@ -323,23 +439,25 @@ def validate(
 
 
 def save_checkpoint(
-    model: CTMUSIQ,
+    model,
     optimizer: optim.Optimizer,
     scheduler: CosineAnnealingLR,
     epoch: int,
     best_aggregate: float,
-    save_path: str
+    save_path: str,
+    model_type: str = 'ct_musiq'
 ) -> None:
     """
     Save model checkpoint.
     
     Args:
-        model: CT-MUSIQ model
+        model: Model instance
         optimizer: Optimizer state
         scheduler: LR scheduler state
         epoch: Current epoch
         best_aggregate: Best validation aggregate score
         save_path: Path to save checkpoint
+        model_type: Type of model
     """
     # Create results directory if it doesn't exist
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
@@ -350,8 +468,9 @@ def save_checkpoint(
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
         'best_aggregate': best_aggregate,
+        'model_type': model_type,
         'config': {
-            'scales': config.SCALES,
+            'scales': config.SCALES if hasattr(config, 'SCALES') else None,
             'lambda_kl': config.LAMBDA_KL,
             'batch_size': config.BATCH_SIZE,
             'seed': config.SEED
@@ -362,7 +481,7 @@ def save_checkpoint(
 
 
 def load_checkpoint(
-    model: CTMUSIQ,
+    model,
     optimizer: optim.Optimizer,
     scheduler: CosineAnnealingLR,
     load_path: str,
@@ -372,7 +491,7 @@ def load_checkpoint(
     Load model checkpoint.
     
     Args:
-        model: CT-MUSIQ model
+        model: Model instance
         optimizer: Optimizer
         scheduler: LR scheduler
         load_path: Path to checkpoint
@@ -391,6 +510,7 @@ def load_checkpoint(
 
 
 def train(
+    model_type: str = 'ct_musiq',
     epochs: int = config.EPOCHS,
     batch_size: int = config.BATCH_SIZE,
     lambda_kl: float = config.LAMBDA_KL,
@@ -400,14 +520,15 @@ def train(
     Main training function.
     
     Args:
+        model_type: Type of model to train ('ct_musiq', 'agaldran_combo')
         epochs: Number of training epochs
         batch_size: Batch size
         lambda_kl: KL loss weight
         resume_from: Path to checkpoint to resume from (optional)
     """
-    print("="*60)
-    print("CT-MUSIQ Training")
-    print("="*60)
+    print("="*70)
+    print(f"Training {model_type.upper()} Model")
+    print("="*70)
     
     # Set random seed
     set_seed()
@@ -435,12 +556,18 @@ def train(
     print(f"  Test:  {len(test_loader.dataset)} images")
     
     # Create model
-    print("\nCreating CT-MUSIQ model...")
-    model = create_model(
-        num_scales=len(config.SCALES),
-        pretrained=True,
-        device=device
-    )
+    print(f"\nCreating {model_type.upper()} model...")
+    if model_type == 'ct_musiq':
+        model = create_model(
+            num_scales=len(config.SCALES),
+            pretrained=True,
+            device=device
+        )
+    else:
+        model = get_model(model_type, pretrained=True)
+    
+    model = model.to(device)
+    print(f"  Model loaded successfully")
     
     # Create loss criterion
     print(f"\nCreating loss criterion (lambda_kl={lambda_kl})...")
@@ -454,12 +581,16 @@ def train(
         weight_decay=0.01
     )
     
-    # Create LR scheduler (will be used in Stage 2)
+    # Create LR scheduler (will be used in Stage 2 for CT-MUSIQ)
+    stage2_cosine_epochs = max(1, epochs - config.STAGE1_EPOCHS - config.STAGE2_WARMUP_EPOCHS)
     scheduler = CosineAnnealingLR(
         optimizer,
-        T_max=epochs - config.STAGE1_EPOCHS,
+        T_max=stage2_cosine_epochs,
         eta_min=config.LR_MIN
     )
+
+    # EMA improves validation stability in noisy training regimes
+    ema_model = ModelEMA(model, decay=0.999) if model_type == 'ct_musiq' else None
     
     # Create GradScaler for mixed precision (only if CUDA available)
     use_amp = device.type == 'cuda'
@@ -483,11 +614,16 @@ def train(
         )
         print(f"  Resumed at epoch {start_epoch + 1}, best aggregate: {best_aggregate:.4f}")
     
-    # Create results directory
+    # Create results directory and model-specific subdirectory
     os.makedirs(config.RESULTS_DIR, exist_ok=True)
+    model_results_dir = os.path.join(config.RESULTS_DIR, model_type)
+    os.makedirs(model_results_dir, exist_ok=True)
+    
+    # Create model-specific paths
+    best_model_path = os.path.join(model_results_dir, f'{model_type}_best.pth')
+    log_path = os.path.join(model_results_dir, f'{model_type}_training_log.csv')
     
     # Initialize training log
-    log_path = config.TRAINING_LOG_CSV
     if not os.path.exists(log_path):
         log_df = pd.DataFrame(columns=[
             'epoch', 'stage', 'lr',
@@ -499,32 +635,43 @@ def train(
         log_df.to_csv(log_path, index=False)
     
     # Training loop
-    print("\n" + "="*60)
+    print("\n" + "="*70)
     print("Starting Training")
-    print("="*60)
+    print("="*70)
     
     patience_counter = 0
     
     for epoch in range(start_epoch, epochs):
         epoch_start_time = time.time()
         
-        # Determine training stage
-        if epoch < config.STAGE1_EPOCHS:
-            stage = 1
-            if epoch == 0:
-                print(f"\n--- Stage 1: Frozen Encoder (Epochs 1-{config.STAGE1_EPOCHS}) ---")
-                freeze_encoder(model)
-                # Set higher LR for Stage 1
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = config.LR_STAGE1
+        # Determine training stage (only for CT-MUSIQ)
+        if model_type == 'ct_musiq':
+            if epoch < config.STAGE1_EPOCHS:
+                stage = 1
+                if epoch == 0:
+                    print(f"\n--- Stage 1: Frozen Encoder (Epochs 1-{config.STAGE1_EPOCHS}) ---")
+                    freeze_encoder(model, model_type)
+                    # Set higher LR for Stage 1
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = config.LR_STAGE1
+            else:
+                stage = 2
+                stage2_epoch = epoch - config.STAGE1_EPOCHS
+                if epoch == config.STAGE1_EPOCHS:
+                    print(f"\n--- Stage 2: Full Fine-tuning (Epochs {config.STAGE1_EPOCHS+1}-{epochs}) ---")
+                    unfreeze_encoder(model, model_type)
+                # Warmup for first few Stage-2 epochs to avoid abrupt LR jump
+                if stage2_epoch < config.STAGE2_WARMUP_EPOCHS:
+                    warmup_factor = (stage2_epoch + 1) / config.STAGE2_WARMUP_EPOCHS
+                    warmup_lr = config.LR * warmup_factor
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = warmup_lr
+                elif stage2_epoch == config.STAGE2_WARMUP_EPOCHS:
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] = config.LR
         else:
-            stage = 2
-            if epoch == config.STAGE1_EPOCHS:
-                print(f"\n--- Stage 2: Full Fine-tuning (Epochs {config.STAGE1_EPOCHS+1}-{epochs}) ---")
-                unfreeze_encoder(model)
-                # Set lower LR for Stage 2
-                for param_group in optimizer.param_groups:
-                    param_group['lr'] = config.LR
+            # Baselines don't have stages
+            stage = 1
         
         # Get current LR
         current_lr = optimizer.param_groups[0]['lr']
@@ -532,21 +679,29 @@ def train(
         # Train one epoch
         train_losses = train_one_epoch(
             model, train_loader, criterion, optimizer, scaler, device, epoch,
+            model_type=model_type,
+            ema_model=ema_model,
             use_amp=use_amp
         )
         
         # Validate
-        val_losses, val_metrics = validate(model, val_loader, criterion, device)
+        if ema_model is not None:
+            ema_model.apply_shadow(model)
+        val_losses, val_metrics = validate(
+            model, val_loader, criterion, device, model_type=model_type
+        )
+        if ema_model is not None:
+            ema_model.restore(model)
         
-        # Update LR scheduler (only in Stage 2)
-        if stage == 2:
+        # Update LR scheduler only after Stage-2 warmup
+        if model_type == 'ct_musiq' and stage == 2 and (epoch - config.STAGE1_EPOCHS) >= config.STAGE2_WARMUP_EPOCHS:
             scheduler.step()
         
         # Calculate epoch time
         epoch_time = time.time() - epoch_start_time
         
         # Print epoch summary
-        print(f"\nEpoch {epoch+1}/{epochs} | Stage {stage} | LR: {current_lr:.2e}")
+        print(f"\nEpoch {epoch+1}/{epochs} | {model_type.upper()} | LR: {current_lr:.2e}")
         print(f"  Train — Loss: {train_losses['total']:.4f} (MSE: {train_losses['mse']:.4f}, KL: {train_losses['kl']:.4f})")
         print(f"  Val   — Loss: {val_losses['total']:.4f} (MSE: {val_losses['mse']:.4f}, KL: {val_losses['kl']:.4f})")
         print(f"  Val   — PLCC: {val_metrics['PLCC']:.4f} | SROCC: {val_metrics['SROCC']:.4f} | KROCC: {val_metrics['KROCC']:.4f} | Agg: {val_metrics['Aggregate']:.4f}")
@@ -557,10 +712,18 @@ def train(
             patience_counter = 0
             
             # Save best checkpoint
-            save_checkpoint(
-                model, optimizer, scheduler, epoch, best_aggregate,
-                config.BEST_MODEL_PATH
-            )
+            if ema_model is not None:
+                ema_model.apply_shadow(model)
+                save_checkpoint(
+                    model, optimizer, scheduler, epoch, best_aggregate,
+                    best_model_path, model_type
+                )
+                ema_model.restore(model)
+            else:
+                save_checkpoint(
+                    model, optimizer, scheduler, epoch, best_aggregate,
+                    best_model_path, model_type
+                )
             print(f"  → New best! Saving checkpoint. (Aggregate: {best_aggregate:.4f})")
         else:
             patience_counter += 1
@@ -587,18 +750,18 @@ def train(
         
         # Early stopping
         if patience_counter >= config.PATIENCE:
-            print(f"\n{'='*60}")
+            print(f"\n{'='*70}")
             print(f"Early stopping triggered after {config.PATIENCE} epochs without improvement")
             print(f"Best validation aggregate: {best_aggregate:.4f}")
-            print(f"{'='*60}")
+            print(f"{'='*70}")
             break
     
     # Training complete
-    print(f"\n{'='*60}")
+    print(f"\n{'='*70}")
     print("Training Complete!")
-    print(f"{'='*60}")
+    print(f"{'='*70}")
     print(f"Best validation aggregate: {best_aggregate:.4f}")
-    print(f"Best model saved to: {config.BEST_MODEL_PATH}")
+    print(f"Best model saved to: {best_model_path}")
     print(f"Training log saved to: {log_path}")
     
     # Return test loader for evaluation
@@ -609,27 +772,54 @@ def main():
     """
     Main entry point with argument parsing.
     """
-    parser = argparse.ArgumentParser(description='Train CT-MUSIQ model')
-    parser.add_argument('--epochs', type=int, default=config.EPOCHS,
-                        help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=config.BATCH_SIZE,
-                        help='Batch size')
-    parser.add_argument('--lambda_kl', type=float, default=config.LAMBDA_KL,
-                        help='KL loss weight')
-    parser.add_argument('--resume', type=str, default=None,
-                        help='Path to checkpoint to resume from')
+    parser = argparse.ArgumentParser(
+        description='Train CT-MUSIQ or baseline models for fair comparison'
+    )
+    parser.add_argument(
+        '--model',
+        type=str,
+        choices=['ct_musiq', 'agaldran_combo'],
+        default='ct_musiq',
+        help='Model to train (default: ct_musiq)'
+    )
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=config.EPOCHS,
+        help='Number of training epochs'
+    )
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        default=config.BATCH_SIZE,
+        help='Batch size'
+    )
+    parser.add_argument(
+        '--lambda_kl',
+        type=float,
+        default=config.LAMBDA_KL,
+        help='KL loss weight'
+    )
+    parser.add_argument(
+        '--resume',
+        type=str,
+        default=None,
+        help='Path to checkpoint to resume from'
+    )
     
     args = parser.parse_args()
     
     # Run training
     model, test_loader, device = train(
+        model_type=args.model,
         epochs=args.epochs,
         batch_size=args.batch_size,
         lambda_kl=args.lambda_kl,
         resume_from=args.resume
     )
     
-    print("\nTo evaluate on test set, run: python evaluate.py")
+    print(f"\nTo evaluate {args.model} on test set, run:")
+    print(f"  python evaluate.py --model {args.model}")
 
 
 if __name__ == "__main__":
