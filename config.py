@@ -129,7 +129,7 @@ MAX_GRID_SIZE = 13
 # 8. TRAINING HYPERPARAMETERS
 # =============================================================================
 
-BATCH_SIZE = 4     # Default batch size — fits within 6 GB VRAM with AMP
+BATCH_SIZE = 10     # Default batch size — fits within 6 GB VRAM with AMP
 LR         = 5e-5  # Base learning rate for Stage 2 (lower for stable fine-tuning)
 LR_STAGE1  = 3e-4  # Stage 1 LR (reduced from 1e-3 for stability)
 LR_MIN     = 1e-6  # Minimum LR for cosine annealing scheduler

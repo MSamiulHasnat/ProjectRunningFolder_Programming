@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(pip show:*)",
+      "Bash(claude-flow init:*)",
+      "Bash(claude-flow memory:*)",
+      "Bash(claude-flow swarm:*)"
     ]
   }
 }
