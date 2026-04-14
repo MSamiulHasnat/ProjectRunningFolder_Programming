@@ -1,0 +1,103 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\citation{ke2021musiq}
+\citation{lee2025ldctiqac}
+\@writefile{toc}{\contentsline {chapter}{\numberline {2}Methodology}{7}{chapter.2}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\@writefile{toc}{\contentsline {section}{\numberline {2.1}Overview and Problem Formulation}{7}{section.2.1}\protected@file@percent }
+\citation{lee2025ldctiqac}
+\@writefile{toc}{\contentsline {section}{\numberline {2.2}Dataset and Pre-Processing}{8}{section.2.2}\protected@file@percent }
+\newlabel{sec:dataset}{{2.2}{8}{Dataset and Pre-Processing}{section.2.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2.1}LDCTIQAC 2023 Dataset}{8}{subsection.2.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2.2}Data Splits}{9}{subsection.2.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2.3}CT Windowing Pre-Processing}{9}{subsection.2.2.3}\protected@file@percent }
+\citation{ke2021musiq}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2.4}Data Loading Pipeline}{10}{subsection.2.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.3}Proposed Model Architecture: CT-MUSIQ}{11}{section.2.3}\protected@file@percent }
+\newlabel{sec:architecture}{{2.3}{11}{Proposed Model Architecture: CT-MUSIQ}{section.2.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.1}Architecture Overview}{11}{subsection.2.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.2}Multi-Scale Patch Tokenisation}{11}{subsection.2.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.3}Spatial Coordinate Representation}{12}{subsection.2.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.4}Grayscale-to-RGB Channel Replication}{12}{subsection.2.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.5}Patch Embedding Module}{13}{subsection.2.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.6}Hash-Based Positional Encoding}{13}{subsection.2.3.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.7}Learnable \texttt  {[CLS]} Token}{14}{subsection.2.3.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.8}Transformer Encoder}{14}{subsection.2.3.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3.9}Prediction Heads}{14}{subsection.2.3.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.4}Loss Function}{15}{section.2.4}\protected@file@percent }
+\newlabel{sec:loss}{{2.4}{15}{Loss Function}{section.2.4}{}}
+\newlabel{eq:total_loss}{{2.10}{15}{Loss Function}{equation.2.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4.1}Mean Squared Error Loss}{15}{subsection.2.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4.2}Scale-Consistency KL Divergence Loss}{15}{subsection.2.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4.3}Pairwise Margin Ranking Loss}{16}{subsection.2.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.5}Training Procedure}{17}{section.2.5}\protected@file@percent }
+\newlabel{sec:training}{{2.5}{17}{Training Procedure}{section.2.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5.1}Two-Stage Training Schedule}{17}{subsection.2.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5.2}Optimiser}{17}{subsection.2.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5.3}Mixed Precision Training}{18}{subsection.2.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5.4}Gradient Clipping}{18}{subsection.2.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5.5}Exponential Moving Average}{18}{subsection.2.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5.6}Early Stopping}{18}{subsection.2.5.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5.7}Reproducibility}{19}{subsection.2.5.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.6}Data Augmentation}{19}{section.2.6}\protected@file@percent }
+\newlabel{sec:augmentation}{{2.6}{19}{Data Augmentation}{section.2.6}{}}
+\citation{lee2025ldctiqac}
+\@writefile{toc}{\contentsline {section}{\numberline {2.7}Evaluation Protocol}{20}{section.2.7}\protected@file@percent }
+\newlabel{sec:evaluation}{{2.7}{20}{Evaluation Protocol}{section.2.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.7.1}Evaluation Metrics}{20}{subsection.2.7.1}\protected@file@percent }
+\newlabel{eq:aggregate}{{2.21}{20}{Evaluation Metrics}{equation.2.21}{}}
+\citation{lee2025ldctiqac}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.7.2}Test-Time Augmentation}{21}{subsection.2.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.7.3}Isotonic Regression Calibration}{21}{subsection.2.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2.8}Comparison Baseline: Agaldran Combo}{21}{section.2.8}\protected@file@percent }
+\newlabel{sec:baseline}{{2.8}{21}{Comparison Baseline: Agaldran Combo}{section.2.8}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2.9}Ablation Study Design}{22}{section.2.9}\protected@file@percent }
+\newlabel{sec:ablation}{{2.9}{22}{Ablation Study Design}{section.2.9}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2.1}{\ignorespaces Ablation experiment configurations.}}{22}{table.2.1}\protected@file@percent }
+\newlabel{tab:ablations}{{2.1}{22}{Ablation experiment configurations}{table.2.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2.10}Implementation Details}{23}{section.2.10}\protected@file@percent }
+\newlabel{sec:implementation}{{2.10}{23}{Implementation Details}{section.2.10}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.10.1}Software Environment}{23}{subsection.2.10.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.10.2}Hardware}{23}{subsection.2.10.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.10.3}Model Parameter Count}{23}{subsection.2.10.3}\protected@file@percent }
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\citation{lee2025ldctiqac}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.10.4}Training Convergence}{24}{subsection.2.10.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.10.5}Final Experimental Results}{24}{subsection.2.10.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2.2}{\ignorespaces Test set results comparison with published LDCTIQAC 2023 leaderboard results~\cite  {lee2025ldctiqac}.}}{24}{table.2.2}\protected@file@percent }
+\newlabel{tab:results}{{2.2}{24}{Test set results comparison with published LDCTIQAC 2023 leaderboard results~\cite {lee2025ldctiqac}}{table.2.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2.11}Summary}{25}{section.2.11}\protected@file@percent }
+\newlabel{sec:methodology_summary}{{2.11}{25}{Summary}{section.2.11}{}}
+\@setckpt{methodoloy}{
+\setcounter{page}{26}
+\setcounter{equation}{24}
+\setcounter{enumi}{6}
+\setcounter{enumii}{0}
+\setcounter{enumiii}{0}
+\setcounter{enumiv}{0}
+\setcounter{footnote}{0}
+\setcounter{mpfootnote}{0}
+\setcounter{part}{0}
+\setcounter{chapter}{2}
+\setcounter{section}{11}
+\setcounter{subsection}{0}
+\setcounter{subsubsection}{0}
+\setcounter{paragraph}{0}
+\setcounter{subparagraph}{0}
+\setcounter{figure}{0}
+\setcounter{table}{2}
+\setcounter{parentequation}{0}
+\setcounter{section@level}{1}
+\setcounter{Item}{25}
+\setcounter{Hfootnote}{0}
+\setcounter{bookmark@seq@number}{53}
+}

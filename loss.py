@@ -110,12 +110,11 @@ class CTMUSIQLoss(nn.Module):
     Components:
       1. MSE Loss: Primary regression loss for quality score prediction
       2. KL Divergence Loss: Scale-consistency regularization
-      
-    The KL loss converts scores to soft distributions and measures
-    disagreement between per-scale predictions and the global prediction.
+      3. Independent Ranking Loss: Optimizes relative ordering of image pairs
     
     Args:
         lambda_kl: Weight for KL loss (default: 0.1)
+        lambda_rank: Weight for Ranking loss (default: 0.5)
         num_bins: Number of bins for score distribution (default: 20)
         score_min: Minimum score value (default: 0.0)
         score_max: Maximum score value (default: 4.0)
@@ -125,6 +124,7 @@ class CTMUSIQLoss(nn.Module):
     def __init__(
         self,
         lambda_kl: float = config.LAMBDA_KL,
+        lambda_rank: float = 0.5,
         num_bins: int = config.NUM_BINS,
         score_min: float = config.SCORE_MIN,
         score_max: float = config.SCORE_MAX,
@@ -133,6 +133,7 @@ class CTMUSIQLoss(nn.Module):
         super().__init__()
         
         self.lambda_kl = lambda_kl
+        self.lambda_rank = lambda_rank
         
         # Score to distribution converter
         self.score_to_dist = ScoreToDistribution(
@@ -143,8 +144,6 @@ class CTMUSIQLoss(nn.Module):
         )
         
         # KL divergence loss
-        # Note: KLDivLoss expects log-probabilities as input
-        # reduction='batchmean' averages over batch dimension
         self.kl_loss = nn.KLDivLoss(reduction='batchmean')
         
         # MSE loss for primary regression
@@ -157,19 +156,44 @@ class CTMUSIQLoss(nn.Module):
     ) -> torch.Tensor:
         """
         Compute MSE loss between predicted and target scores.
-        
-        Args:
-            predicted: Tensor [B, 1] — model predictions
-            target: Tensor [B] — ground truth scores
-            
-        Returns:
-            Scalar MSE loss
         """
         # Squeeze predicted to match target shape
         predicted = predicted.squeeze(-1)
-        
         return self.mse_loss(predicted, target)
     
+    def compute_ranking_loss(
+        self,
+        predictions: torch.Tensor,
+        targets: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Pairwise Margin Ranking Loss.
+        Optimizes the model to correctly order pairs of images.
+        """
+        # Ensure predictions are 1D
+        preds = predictions.squeeze(-1)
+        
+        # Create all possible pairs in the batch
+        # preds: [B] -> s1: [B, 1], s2: [1, B]
+        s1 = preds.unsqueeze(1)
+        s2 = preds.unsqueeze(0)
+        diff_pred = s1 - s2
+        
+        t1 = targets.unsqueeze(1)
+        t2 = targets.unsqueeze(0)
+        diff_target = t1 - t2
+        
+        # Binary indicator of real ranking: 1 if i > j, -1 if i < j, 0 if equal
+        true_rank = torch.sign(diff_target)
+        
+        # Margin loss: encourage diff_pred to have same sign as diff_target
+        # loss = max(0, margin - y * (s1 - s2))
+        margin = 0.1
+        loss = torch.relu(margin - true_rank * diff_pred)
+        
+        # Mean over all non-diagonal elements (where i != j)
+        return loss.mean()
+
     def compute_kl_loss(
         self,
         scale_scores: List[torch.Tensor],
@@ -177,49 +201,18 @@ class CTMUSIQLoss(nn.Module):
     ) -> torch.Tensor:
         """
         Compute KL divergence loss for scale consistency.
-        
-        Converts each scale's prediction and the global prediction to
-        probability distributions, then measures KL divergence between
-        each scale distribution and the global distribution.
-        
-        Args:
-            scale_scores: List of [B, 1] tensors — per-scale predictions
-            global_score: Tensor [B, 1] — global prediction
-            
-        Returns:
-            Scalar KL loss (averaged across scales)
         """
-        # Convert global score to distribution (target for KL)
         global_dist = self.score_to_dist(global_score.squeeze(-1))
-        
-        # KL divergence is asymmetric: KL(P || Q) where P is target
-        # We want scale distributions to match global, so:
-        # KL(global || scale_i) — global is target (P), scale is input (Q)
-        # KLDivLoss expects: input = log(Q), target = P
-        
-        # Take log of global distribution (target)
-        # Add small epsilon to avoid log(0)
         global_log_dist = torch.log(global_dist + 1e-8)
         
-        # Compute KL for each scale
         kl_losses = []
         for scale_score in scale_scores:
-            # Convert scale score to distribution
             scale_dist = self.score_to_dist(scale_score.squeeze(-1))
-            
-            # KL(global || scale) = sum(P * log(P/Q))
-            # KLDivLoss(input, target) computes: target * (log(target) - input)
-            # So we pass: input = log(scale_dist), target = global_dist
             scale_log_dist = torch.log(scale_dist + 1e-8)
-            
-            # Compute KL divergence
             kl = self.kl_loss(scale_log_dist, global_dist)
             kl_losses.append(kl)
         
-        # Average across scales
-        mean_kl = torch.stack(kl_losses).mean()
-        
-        return mean_kl
+        return torch.stack(kl_losses).mean()
     
     def forward(
         self,
@@ -228,38 +221,30 @@ class CTMUSIQLoss(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         """
         Compute combined loss.
-        
-        Args:
-            output: Dictionary from model with:
-                'score': Tensor [B, 1] — global prediction
-                'scale_scores': List of Tensor [B, 1] — per-scale predictions
-            target: Tensor [B] — ground truth quality scores
-            
-        Returns:
-            Dictionary with:
-                'total': Total loss (MSE + λ * KL)
-                'mse': MSE loss component
-                'kl': KL loss component
         """
         global_score = output['score']
         scale_scores = output['scale_scores']
         
-        # Compute MSE loss
+        # 1. MSE loss
         mse_loss = self.compute_mse_loss(global_score, target)
         
-        # Compute KL loss (only if lambda > 0 and we have scale scores)
+        # 2. KL loss
         if self.lambda_kl > 0 and len(scale_scores) > 0:
             kl_loss = self.compute_kl_loss(scale_scores, global_score)
         else:
             kl_loss = torch.tensor(0.0, device=target.device)
+            
+        # 3. Ranking loss
+        rank_loss = self.compute_ranking_loss(global_score, target)
         
         # Combined loss
-        total_loss = mse_loss + self.lambda_kl * kl_loss
+        total_loss = mse_loss + (self.lambda_kl * kl_loss) + (self.lambda_rank * rank_loss)
         
         return {
             'total': total_loss,
             'mse': mse_loss,
-            'kl': kl_loss
+            'kl': kl_loss,
+            'rank': rank_loss
         }
 
 

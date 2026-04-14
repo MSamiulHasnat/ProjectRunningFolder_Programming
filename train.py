@@ -640,6 +640,7 @@ def train(
     print("="*70)
     
     patience_counter = 0
+    gradient_accumulation_steps = 1  # Reset for optimized native resolution (574 tokens)
     
     for epoch in range(start_epoch, epochs):
         epoch_start_time = time.time()

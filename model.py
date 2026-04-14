@@ -265,7 +265,7 @@ class CTMUSIQ(nn.Module):
         # =========================================================================
         # 5. PREDICTION HEADS
         # =========================================================================
-        # Global head: [CLS] token → final quality score
+        # Global head: [CLS] token -> final quality score
         self.global_head = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
@@ -458,9 +458,9 @@ class CTMUSIQ(nn.Module):
         patch_outputs = encoded[:, 1:, :]  # [B, N, 768]
         
         # =========================================================================
-        # 6. GLOBAL PREDICTION
+        # 6. GLOBAL & SPECIALIZED PREDICTIONS
         # =========================================================================
-        # [CLS] → quality score
+        # [CLS] -> quality score
         global_score = self.global_head(cls_output)  # [B, 1]
         
         # =========================================================================

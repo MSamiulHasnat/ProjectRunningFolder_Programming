@@ -112,14 +112,17 @@ class LDCTDataset(Dataset):
             self.patch_grids.append(grid_size)
         
         # Total number of patches across all scales
-        # 224/32 = 7 → 7×7 = 49 patches
-        # 384/32 = 12 → 12×12 = 144 patches
+        # 224/32 = 7 -> 7×7 = 49 patches
+        # 384/32 = 12 -> 12×12 = 144 patches
         # Total: 49 + 144 = 193 patches
         self.num_patches = sum(g * g for g in self.patch_grids)
         
+        # Sample weights for hard mining (image_id -> weight)
+        self.sample_weights = {}
+        
         print(f"Initialized {split} dataset:")
         print(f"  Images: {len(self.image_ids)}")
-        print(f"  Scales: {scales} → {self.num_patches} total patches")
+        print(f"  Scales: {scales} -> {self.num_patches} total patches")
         print(f"  Augmentation: {self.augment}")
     
     def __len__(self) -> int:
@@ -159,68 +162,71 @@ class LDCTDataset(Dataset):
     def apply_augmentation(self, image: np.ndarray) -> np.ndarray:
         """
         Apply training augmentation to a single CT image.
-        
-        Augmentations are kept mild because CT noise is diagnostically meaningful:
+
+        Augmentations are kept mild because CT noise is diagnostically meaningful.
+        Operations are done in float32 to preserve precision (no uint8 quantization).
+
           - Random horizontal flip (p=0.5)
-                    - Random rotation ±5 degrees
+          - Random vertical flip (p=0.5)
+          - Random rotation ±7 degrees
           - Random crop retaining 85-100% of area, resize back
           - Brightness/contrast jitter ±0.05 only
-                    - Mild additive Gaussian noise
-        
+          - Mild additive Gaussian noise
+
         Args:
             image: numpy array of shape (H, W), values in [0, 1]
-            
+
         Returns:
             Augmented image with same shape and dtype
         """
-        # Convert to PIL for torchvision transforms
-        img_pil = Image.fromarray((image * 255).astype(np.uint8), mode='L')
-        
-        # Random horizontal flip (p=0.5)
-        if np.random.random() < 0.5:
-            img_pil = TF.hflip(img_pil)
+        h, w = image.shape
 
-        # Small random rotation (±5°) to improve geometric robustness
+        # Random horizontal flip (p=0.5) — in numpy, preserves float32 precision
         if np.random.random() < 0.5:
-            angle = float(np.random.uniform(-5.0, 5.0))
+            image = image[:, ::-1].copy()
+
+        # Random vertical flip (p=0.5) — brain CT axial slices are
+        # roughly symmetric top/bottom in terms of quality
+        if np.random.random() < 0.5:
+            image = image[::-1, :].copy()
+
+        # Small random rotation (±7°) — use PIL for interpolation quality
+        # but keep float32 by converting via uint16 to minimize quantization
+        if np.random.random() < 0.5:
+            angle = float(np.random.uniform(-7.0, 7.0))
+            # Use float-mode PIL (mode='F') to avoid 8-bit quantization
+            img_pil = Image.fromarray(image, mode='F')
             img_pil = TF.rotate(
                 img_pil,
                 angle=angle,
                 interpolation=TF.InterpolationMode.BILINEAR,
-                fill=0
+                fill=0.0
             )
-        
-        # Random crop and resize back
-        # Crop 85-100% of area to preserve most of the brain structure
-        h, w = img_pil.size[1], img_pil.size[0]
-        crop_fraction = np.random.uniform(0.85, 1.0)
-        crop_h = int(h * crop_fraction)
-        crop_w = int(w * crop_fraction)
-        
-        # Random crop position
-        top = np.random.randint(0, h - crop_h + 1)
-        left = np.random.randint(0, w - crop_w + 1)
-        
-        img_pil = TF.crop(img_pil, top, left, crop_h, crop_w)
-        img_pil = TF.resize(img_pil, (h, w), interpolation=TF.InterpolationMode.BICUBIC)
-        
-        # Mild brightness/contrast jitter (±0.05)
-        # CT values are clinically meaningful — keep jitter small
-        brightness_factor = 1.0 + np.random.uniform(-0.05, 0.05)
+            image = np.array(img_pil, dtype=np.float32)
+
+        # Random crop and resize back (85-100% of area)
+        if np.random.random() < 0.5:
+            crop_fraction = np.random.uniform(0.85, 1.0)
+            crop_h = int(h * crop_fraction)
+            crop_w = int(w * crop_fraction)
+            top = np.random.randint(0, h - crop_h + 1)
+            left = np.random.randint(0, w - crop_w + 1)
+            image = image[top:top + crop_h, left:left + crop_w]
+            img_pil = Image.fromarray(image, mode='F')
+            img_pil = img_pil.resize((w, h), Image.BICUBIC)
+            image = np.array(img_pil, dtype=np.float32)
+
+        # Mild brightness/contrast jitter (±0.05) — in float32 directly
+        brightness_delta = np.random.uniform(-0.05, 0.05)
         contrast_factor = 1.0 + np.random.uniform(-0.05, 0.05)
-        
-        img_pil = TF.adjust_brightness(img_pil, brightness_factor)
-        img_pil = TF.adjust_contrast(img_pil, contrast_factor)
-        
-        # Convert back to numpy float32 in [0, 1]
-        image_aug = np.array(img_pil, dtype=np.float32) / 255.0
+        mean = image.mean()
+        image = (image - mean) * contrast_factor + mean + brightness_delta
 
         # Mild Gaussian noise to simulate scanner noise variability
         noise_std = float(np.random.uniform(0.005, 0.02))
-        noise = np.random.normal(0.0, noise_std, size=image_aug.shape).astype(np.float32)
-        image_aug = np.clip(image_aug + noise, 0.0, 1.0)
-        
-        return image_aug
+        image = image + np.random.normal(0.0, noise_std, size=image.shape).astype(np.float32)
+
+        return np.clip(image, 0.0, 1.0)
     
     def build_multi_scale_pyramid(self, image: np.ndarray) -> List[np.ndarray]:
         """
@@ -366,10 +372,15 @@ class LDCTDataset(Dataset):
         coords_tensor = torch.from_numpy(all_coords).long()
         score_tensor = torch.tensor(score, dtype=torch.float32)
         
+        # Get sample weight (default to 1.0 if not set)
+        weight = self.sample_weights.get(image_id, 1.0)
+        weight_tensor = torch.tensor(weight, dtype=torch.float32)
+        
         return {
             'patches': patches_tensor,   # [N, 3, 32, 32]
             'coords': coords_tensor,     # [N, 3]
             'score': score_tensor,       # scalar
+            'weight': weight_tensor,     # scalar
             'image_id': image_id         # str
         }
 
@@ -473,6 +484,9 @@ def custom_collate_fn(batch: List[Dict]) -> Dict[str, torch.Tensor]:
     # Stack scores: [B]
     scores = torch.stack([item['score'] for item in batch])
     
+    # Stack weights: [B]
+    weights = torch.stack([item['weight'] for item in batch])
+    
     # Collect image IDs as list
     image_ids = [item['image_id'] for item in batch]
     
@@ -480,6 +494,7 @@ def custom_collate_fn(batch: List[Dict]) -> Dict[str, torch.Tensor]:
         'patches': patches,
         'coords': coords,
         'score': scores,
+        'weight': weights,
         'image_id': image_ids
     }
 

@@ -1,0 +1,162 @@
+% ============================================================
+% Chapter 2: Literature Review
+% CT-MUSIQ: Automated Perceptual Assessment of Low-Dose CT
+% ============================================================
+
+\chapter{Literature Review}
+\label{sec:literature_review}
+
+\section{The Clinical Imperative and Evolution of CT Reconstruction}
+
+Computed tomography (CT) remains one of the most widely used imaging modalities in
+clinical workflows and large-scale diagnostic pipelines \cite{zhao2023multitask}.
+However, diagnostic CT relies on ionizing radiation, creating a persistent trade-off
+between image quality and patient safety. Under the ALARA principle, low-dose CT (LDCT)
+protocols are preferred whenever clinically feasible, especially for vulnerable
+populations and repeated follow-up imaging \cite{p2023observational, cho2024pediatric}.
+
+From an inverse-problem perspective, reconstruction seeks to recover latent anatomy
+$\mathbf{x}$ from noisy measurements $\mathbf{y}$ via:
+\begin{equation}
+\mathbf{y} = A(\mathbf{x}) + \epsilon,
+\end{equation}
+where $A$ is the acquisition operator and $\epsilon$ denotes measurement noise
+\cite{niu2023score}.
+In LDCT, photon starvation increases quantum noise and yields mixed Poisson-Gaussian
+statistics in reconstructed data \cite{zhang2024review}.
+
+Filtered back projection (FBP) remains computationally efficient, but under severe
+low-dose conditions it amplifies noise and streak artifacts. Iterative reconstruction
+(IR) and model-based iterative reconstruction (MBIR) improved statistical modeling,
+yet often introduce over-smoothed texture and non-natural appearance that may reduce
+diagnostic confidence for subtle findings \cite{willemink2013iterative, mileto2019state}.
+
+Deep learning image reconstruction (DLIR) frameworks, including RED-CNN style networks,
+dual-domain methods, and diffusion-based models, now provide substantially better
+artifact suppression with improved structural detail preservation \cite{koetzier2023deep,
+gao2024corediff, gao2025need}. In parallel, hardware advances such as photon-counting
+CT (PCD-CT) are changing acquisition physics and creating new reconstruction demands
+\cite{willemink2013iterative}.
+
+\section{IQA in Medical Imaging: Subjective Versus Objective Assessment}
+
+In medical imaging, quality is fundamentally tied to diagnostic utility, not only to
+pixel-level fidelity. Therefore, expert radiologist scoring remains the gold standard
+for image quality assessment (IQA) \cite{nirupama2025diagnosis}. Agreement and
+repeatability are commonly quantified with inter-rater and intra-rater reliability
+statistics such as ICC \cite{herath2025systematic}.
+
+Subjective scoring is expensive and difficult to scale. Objective full-reference
+(FR-IQA) metrics such as PSNR, SSIM, FSIM, VSNR, IFC, and VIF compare degraded images
+to pristine references \cite{athar2019comprehensive}. Although useful in controlled
+settings, FR-IQA has a major clinical limitation: true perfectly aligned high-dose
+references are usually unavailable and often unethical to acquire for every patient
+\cite{lee2025ldctiqac}.
+
+\section{Limits of Traditional No-Reference IQA}
+
+No-reference IQA (NR-IQA) methods estimate quality from the test image alone, avoiding
+reference-image dependency \cite{wang2006modern}. Classical methods such as BRISQUE and
+NIQE rely on natural scene statistics (NSS), including MSCN-derived features modeled
+with generalized Gaussian families \cite{sheikh2005noreference, liu2009blind}.
+
+These assumptions transfer poorly to CT, where intensity values encode X-ray attenuation
+in Hounsfield Units (HU), and LDCT degradation patterns are domain-specific,
+non-stationary, and clinically structured. As a result, handcrafted NSS metrics often
+show weak alignment with radiologist perception in medical settings \cite{athar2019comprehensive,
+stepien2023brief}.
+
+\section{Deep NR-IQA and Remaining Feature Bottlenecks}
+
+Deep NR-IQA shifted the field from handcrafted statistics to learned representations.
+CNN backbones (VGG/ResNet/DenseNet/Inception) with transfer learning and regression
+heads improved performance over classical methods \cite{ahmed2024iqanrtl}.
+Specialized designs also introduced perceptual priors, including sparse representation
+and just-noticeable-distortion (JND)-driven feature selection in LDCT settings
+\cite{shen2025noreference}.
+
+Despite these advances, CNNs remain constrained by local receptive fields and
+progressive downsampling. This can suppress fine-grained noise cues while limiting
+global context modeling for long-range streak artifacts. Domain shift across scanners,
+protocols, and institutions further challenges robust generalization
+\cite{greenspan2023partii}.
+
+\section{Evaluation Deficits and Standardization}
+
+A recurring challenge in LDCT literature is inconsistent evaluation practice: limited
+clinical relevance of selected metrics, uneven baselines, and small private datasets.
+High-fidelity simulation pipelines (photon statistics plus electronic noise modeling)
+help improve benchmarking realism across dose levels \cite{zabic2013lowdose, zhou2024virtual}.
+
+The LDCTIQAC challenge substantially improved standardization by releasing a curated,
+expert-annotated public dataset and a common evaluation protocol centered on
+perceptual quality ranking \cite{lee2025ldctiqac}. This benchmark now serves as a
+practical foundation for reproducible NR-IQA comparison in LDCT.
+
+\section{Vision Transformers, Multi-Scale Processing, and MUSIQ}
+
+Vision Transformers (ViTs) model long-range dependencies via global self-attention,
+which is attractive for LDCT quality assessment where artifacts can span large spatial
+regions \cite{ke2021musiq}. However, standard ViTs use fixed-size token grids and may
+lose clinically useful high-frequency detail when high-resolution inputs are globally
+resized.
+
+MUSIQ addresses this resolution paradox by combining multi-scale patch extraction with
+hash-based positional encoding over scale, row, and column indices, allowing quality
+prediction from variable multi-resolution token sets \cite{ke2021musiq}. Related
+medical-transformer systems (e.g., Swin-based and hybrid CNN-transformer designs)
+report strong denoising and reconstruction performance across CT tasks \cite{zhu2023stednet,
+li2023mdst, luo2025hcformer}.
+
+\section{Emerging Vision-Language Directions for IQA}
+
+Recent IQA studies explore multimodal large language model (MLLM) integration for
+explainable quality reasoning. Systems such as IQAGPT and instruction-tuned
+vision-language models can generate interpretable textual quality rationales alongside
+scores \cite{chen2024iqagpt, liu2023visual, wu2024comprehensive}.
+
+These approaches offer promising explainability but remain constrained by computational
+cost, latency, and hallucination risk in safety-critical workflows. At present, compact,
+well-calibrated discriminative IQA models are still more practical for high-throughput
+clinical deployment.
+
+\section{Research Gap and Motivation for CT-MUSIQ}
+
+The literature indicates three unresolved issues. First, many NR-IQA pipelines remain
+insufficiently adapted to CT-specific intensity physics and viewing practice. Second,
+CNN-centric designs underutilize long-range dependencies critical for LDCT artifacts.
+Third, generic transformer IQA models are not directly optimized for clinically grounded,
+multi-scale CT quality prediction.
+
+CT-MUSIQ addresses this gap by adapting MUSIQ to brain LDCT with CT-aware preprocessing,
+multi-scale tokenization, hash-based positional encoding, and scale-consistency
+regularization. Importantly, for brain CT this thesis uses the standard brain
+soft-tissue window (level $40$ HU, width $80$ HU), while acknowledging that the
+original challenge context often references abdominal settings (level $40$ HU,
+width $350$ HU). This domain-correct adaptation aligns model input characteristics with
+radiologist perception and motivates the methodology developed in subsequent chapters.
+
+\section{Summary}
+
+This review establishes the methodological foundation for CT-MUSIQ: objective NR-IQA for
+LDCT requires clinically aligned preprocessing, multi-scale representation learning,
+robust rank-sensitive optimization, and reproducible evaluation. The next chapter details
+the full architecture, loss design, and training strategy.
+
+% Keep bibliography entries in the project BibTeX file.
+% The following citation keys are expected in bibliography.bib (or equivalent):
+% lee2025ldctiqac, nirupama2025diagnosis, athar2019comprehensive,
+% xun2025bibliometric, shen2025noreference, gao2024corediff, zhu2023stednet,
+% luo2025hcformer, sori2021dfdnet, shan20183d, mileto2019state,
+% koetzier2023deep, mccollough2020cancerarchive, willemink2013iterative,
+% zhang2024review, chen2024advances, wang2006modern, hu2024globalawareness,
+% ahmed2024iqanrtl, herath2025systematic, hosu2020koniq10k, stepien2023brief,
+% dai2023instructblip, radford2021clip, ke2021musiq, chen2024iqagpt,
+% liu2023visual, smits2007headinjury, li2021inexactdescent,
+% zhao2023multitask, gao2025need, ragoza2023pinn, hounsfield1973ct,
+% p2023observational, niu2023score, zabic2013lowdose, pouget2023channelized,
+% yan2018deeplesion, elhage2021circuits, fan2021interpretability,
+% li2023mdst, greenspan2023partx, goodfellow2016deeplearning,
+% wu2024comprehensive, zhou2024virtual, greenspan2023partii,
+% galdran2022calibration, sheikh2005noreference, liu2009blind,
+% cho2024pediatric

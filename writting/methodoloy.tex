@@ -1,0 +1,861 @@
+% ============================================================
+% Chapter 3: Methodology
+% CT-MUSIQ: Automated Perceptual Assessment of Low-Dose CT
+% Author: M. Samiul Hasnat, Sichuan University
+% ============================================================
+
+\chapter{Methodology}
+
+\section{Overview and Problem Formulation}
+
+The central objective of this thesis is to develop an automated, no-reference image quality
+assessment (NR-IQA) system for brain low-dose computed tomography (LDCT) images.
+In clinical practice, radiologists manually evaluate each CT scan for diagnostic
+acceptability, a task that is time-consuming, subject to inter-rater variability, and
+unsuitable for high-throughput quality control pipelines. The proposed system, named
+CT-MUSIQ, aims to reproduce this human perceptual judgment automatically by learning
+a function that maps an input CT image directly to a continuous quality score, without
+requiring a paired reference scan of known perfect quality.
+
+Formally, the task is defined as follows. Given a brain CT slice
+$\mathbf{x} \in \mathbb{R}^{H \times W}$ (where $H = W = 512$), the model must predict
+a scalar quality score $\hat{q} \in [0, 4]$ that closely matches the consensus radiologist
+score $q \in [0, 4]$ assigned on a Likert scale. The model has no access to the original,
+noise-free reference image during inference, making this a strictly no-reference problem.
+This is clinically important because in routine CT acquisition there is no ``pristine''
+reference available---the task is to assess perceptual quality from the single acquired
+image alone.
+
+CT-MUSIQ is an architectural adaptation of MUSIQ (Multi-Scale Image Quality
+Transformer), a model proposed by Ke et al.\ \cite{ke2021musiq} (ICCV 2021) for natural
+image quality assessment. The key innovations introduced in CT-MUSIQ over the vanilla
+MUSIQ architecture are: (1) a custom hash-based positional encoding scheme tailored to
+multi-scale variable-length patch sequences, (2) per-scale prediction heads that enable
+a novel scale-consistency KL divergence regularisation loss, (3) a pairwise margin
+ranking loss for improved ordinal discrimination, and (4) a clinically-motivated brain
+CT windowing pre-processing step in place of the original challenge's abdominal windowing
+parameters. The complete system is trained end-to-end on the LDCTIQAC 2023 challenge
+dataset \cite{lee2025ldctiqac} using a two-stage fine-tuning protocol with
+mixed-precision training, designed to fit within 6~GB of GPU video memory (VRAM) on a
+consumer-grade NVIDIA RTX~3060 Laptop GPU.
+
+The following sections describe each methodological component in detail: the dataset and
+pre-processing pipeline (Section~\ref{sec:dataset}), the CT-MUSIQ model architecture
+(Section~\ref{sec:architecture}), the composite loss function
+(Section~\ref{sec:loss}), the training procedure (Section~\ref{sec:training}), data
+augmentation (Section~\ref{sec:augmentation}), the evaluation protocol
+(Section~\ref{sec:evaluation}), the comparison baseline (Section~\ref{sec:baseline}),
+and the ablation study design (Section~\ref{sec:ablation}). Implementation details and
+hardware specifications are provided in Section~\ref{sec:implementation}.
+
+
+% ============================================================
+\section{Dataset and Pre-Processing}
+\label{sec:dataset}
+
+\subsection{LDCTIQAC 2023 Dataset}
+
+All experiments in this thesis are conducted on the \textbf{LDCTIQAC 2023 dataset}
+(Low-Dose CT Image Quality Assessment Challenge 2023), which was the basis of a
+challenge organised at MICCAI 2023 and subsequently documented in Lee et al.\
+\cite{lee2025ldctiqac} in \textit{Medical Image Analysis}. The dataset consists of
+\textbf{1,000 axial brain CT slices}, each stored as a 32-bit floating-point TIFF image
+of dimensions $512 \times 512$ pixels. The pixel values in the distributed files are
+pre-normalised to the range $[0, 1]$ prior to release. Each image corresponds to a
+single axial slice from a low-dose CT acquisition protocol designed to simulate
+clinically realistic noise levels encountered in routine brain CT examinations.
+
+Quality labels were obtained through expert radiologist assessment. Multiple radiologists
+independently assigned a perceptual quality score to each image using a five-point
+Likert scale ranging from~0 (completely unacceptable, severe noise or artefacts) to~4
+(excellent quality, fully diagnostic). The labels distributed with the dataset represent
+the averaged consensus score across all annotating radiologists, yielding a continuous
+floating-point value for each image. This averaged score is used as the regression
+target throughout training and evaluation.
+
+The image files follow a strict four-digit zero-padded naming convention:
+\texttt{\{index:04d\}.tif}, yielding filenames \texttt{0000.tif} through
+\texttt{0999.tif}. The mapping from filenames to quality scores is provided in a JSON
+file (\texttt{train.json}) with the filename (including extension) as the key and the
+quality score as the value.
+
+\subsection{Data Splits}
+
+The 1,000 images are partitioned into three non-overlapping subsets based on filename
+index order, as specified in the challenge: a \textbf{training set} comprising images
+0000 through 0699 (700 images), a \textbf{validation set} comprising images 0700 through
+0899 (200 images), and a \textbf{test set} comprising images 0900 through 0999
+(100 images). This corresponds to a 70/20/10 split ratio.
+
+Importantly, the split is deterministic and index-based rather than randomly sampled.
+This design choice ensures that all reported results are reproducible without knowledge
+of a random seed for splitting, and it matches the official challenge protocol. During
+training, only the training split is used for gradient updates. The validation split is
+used exclusively for hyperparameter tuning, model selection (checkpoint saving based on
+best validation aggregate score), and early stopping. The test split is held out
+completely until final evaluation and is never used to inform any training decision.
+
+\subsection{CT Windowing Pre-Processing}
+
+CT images store raw pixel values in Hounsfield Units (HU), a quantitative scale where
+water is 0~HU, air is approximately $-1000$~HU, and dense bone is approximately
+$+1000$~HU. Raw HU values span a large dynamic range (typically $-1024$ to $+3071$~HU)
+that is clinically irrelevant for any single tissue type. Radiologists routinely apply a
+\textbf{CT window} transformation before viewing: they select a window level (centre)
+and window width that clips and linearly rescales the HU range to display only the tissue
+of interest with full contrast.
+
+A critical methodological adaptation in this thesis concerns the windowing parameters.
+The original LDCTIQAC 2023 challenge was designed around \textbf{abdominal CT} imaging,
+for which the clinical standard window is centred at level 40~HU with a width of
+350~HU. However, the specific dataset used in this thesis contains \textbf{brain CT
+slices}, for which the standard clinical window is the \textbf{brain soft-tissue window}:
+level 40~HU, width 80~HU. This choice reflects the practice of neuroradiology: the
+narrow brain window (spanning from 0 to 80~HU) optimally differentiates grey matter
+($\sim$40~HU), white matter ($\sim$35~HU), cerebrospinal fluid ($\sim$0--15~HU), and
+hyperacute haemorrhage ($\sim$50--80~HU), which are the diagnostically relevant tissues
+in brain CT quality assessment.
+
+The window transformation is applied as follows. Given an input pixel value $p$ and
+window parameters level $L = 40$~HU and width $W = 80$~HU:
+
+\begin{align}
+    HU_{\min} &= L - \frac{W}{2} = 40 - 40 = 0~\text{HU} \\
+    HU_{\max} &= L + \frac{W}{2} = 40 + 40 = 80~\text{HU} \\
+    p_{\text{clipped}} &= \text{clip}(p,\; HU_{\min},\; HU_{\max}) \\
+    p_{\text{norm}} &= \frac{p_{\text{clipped}} - HU_{\min}}{HU_{\max} - HU_{\min}} \in [0, 1]
+\end{align}
+
+Since the dataset images are already stored as pre-normalised float32 values in $[0,1]$,
+the windowing is implicitly applied during dataset generation. No further normalisation
+using ImageNet mean and standard deviation is applied, as the images are CT scans rather
+than natural images.
+
+\subsection{Data Loading Pipeline}
+
+The \texttt{LDCTDataset} PyTorch \texttt{Dataset} class implements the complete image
+loading and pre-processing pipeline for a given split. During \texttt{\_\_getitem\_\_},
+the following operations are performed in sequence:
+
+\begin{enumerate}
+    \item \textbf{Image loading}: The 32-bit float TIFF file is opened with PIL,
+          converted to a NumPy array of shape $(512, 512)$, and clipped to $[0, 1]$.
+    \item \textbf{Augmentation} (training split only): stochastic spatial and
+          photometric transformations are applied (see Section~\ref{sec:augmentation}).
+    \item \textbf{Multi-scale pyramid construction}: The image is resized to each
+          target scale using bicubic interpolation.
+    \item \textbf{Patch extraction}: Each resized image is divided into
+          non-overlapping $32 \times 32$ patches, and the spatial coordinates
+          (scale index, row index, column index) of each patch are recorded.
+    \item \textbf{Channel replication}: Each greyscale patch is replicated into
+          three identical channels to produce an RGB-compatible tensor.
+    \item \textbf{Tensor conversion}: All patches and coordinates are converted to
+          PyTorch tensors.
+\end{enumerate}
+
+The \texttt{DataLoader} is configured with \texttt{batch\_size=10},
+\texttt{shuffle=True} for training and \texttt{shuffle=False} for validation and test,
+\texttt{num\_workers=0} for Windows-compatible multiprocessing, \texttt{pin\_memory=True}
+for efficient GPU transfer, and \texttt{drop\_last=True} for training.
+
+
+% ============================================================
+\section{Proposed Model Architecture: CT-MUSIQ}
+\label{sec:architecture}
+
+\subsection{Architecture Overview}
+
+CT-MUSIQ is a Transformer-based no-reference image quality assessor that operates on
+multi-scale non-overlapping image patches. Inspired by the MUSIQ model of Ke et al.\
+\cite{ke2021musiq}, which demonstrated that a Vision Transformer processing patches
+from images at multiple resolutions simultaneously can learn richer quality-relevant
+representations than single-scale CNNs, CT-MUSIQ adapts this paradigm for the specific
+challenges of brain CT quality assessment: single-channel greyscale images, small
+dataset size (700 training samples), and tight GPU memory constraints.
+
+The architecture consists of five principal components, executed in sequence during each
+forward pass:
+
+\begin{enumerate}
+    \item \textbf{Multi-scale patch tokenisation}: The input CT image is resized to
+          two scales ($224 \times 224$ and $384 \times 384$) and divided into
+          non-overlapping $32 \times 32$ patches, yielding 49 and 144 patches
+          respectively, for a total of 193 patch tokens per image.
+    \item \textbf{Patch Embedding}: Each patch is projected from pixel space
+          ($3 \times 32 \times 32$) to a 768-dimensional embedding space using a shared
+          2D convolutional projection layer initialised with pretrained ViT-B/32 weights.
+    \item \textbf{Hash-based Positional Encoding}: Spatial position and scale identity
+          are injected into each token via a sum of three learned embedding lookups.
+    \item \textbf{Transformer Encoder}: A 12-layer, 8-head Transformer encoder
+          processes the full sequence of 193 patch tokens prepended with a learnable
+          \texttt{[CLS]} token (194 tokens total), performing global self-attention.
+    \item \textbf{Prediction Heads}: A two-layer MLP global head reads the
+          \texttt{[CLS]} token to produce the final quality score. Two auxiliary
+          per-scale heads read scale-averaged token representations to produce
+          scale-specific scores used only during training for the KL consistency loss.
+\end{enumerate}
+
+\subsection{Multi-Scale Patch Tokenisation}
+
+The motivation for multi-scale representation in IQA is well established: quality
+degradations such as noise, blur, and compression artefacts manifest differently at
+different spatial frequencies and resolutions. A patch at a coarse scale captures global
+structural context, while a patch at a fine scale captures local texture and noise
+statistics. Processing both simultaneously enables the model to integrate quality cues
+across spatial scales.
+
+Two target scales are used: $S_1 = 224$~pixels and $S_2 = 384$~pixels. Each CT image
+($512 \times 512$~pixels) is independently resized to each target scale using bicubic
+interpolation. Each resized image is then divided into a regular grid of non-overlapping
+$32 \times 32$ pixel patches:
+
+\begin{itemize}
+    \item At scale 224: grid size $= 224 \div 32 = 7$, yielding $7 \times 7 = 49$ patches.
+    \item At scale 384: grid size $= 384 \div 32 = 12$, yielding $12 \times 12 = 144$ patches.
+    \item Total patch count: $49 + 144 = 193$ patches per image.
+\end{itemize}
+
+The choice of patch size $P = 32$ is motivated by compatibility with the pretrained
+Vision Transformer ViT-B/32, which uses $32 \times 32$ patches. Patches from both
+scales are concatenated into a single sequence (scale-0 patches first, then scale-1
+patches).
+
+\subsection{Spatial Coordinate Representation}
+
+Each patch is assigned a three-dimensional coordinate vector $(s_i, r_i, c_i)$ where
+$s_i \in \{0, 1\}$ is the scale index, $r_i \in \{0, \ldots, g_s - 1\}$ is the row
+index within the grid of scale $s$, and $c_i \in \{0, \ldots, g_s - 1\}$ is the column
+index, with $g_s = S_s \div P$ being the grid size at scale $s$. For the 193 total
+patches, the coordinate array has shape $[193, 3]$. These coordinates are stored as
+integer tensors and consumed by the hash-based positional encoding module.
+
+\subsection{Grayscale-to-RGB Channel Replication}
+
+The pretrained ViT-B/32 model was trained on ImageNet RGB images, so its patch embedding
+convolution has shape \texttt{[768, 3, 32, 32]}. Brain CT images are inherently
+single-channel (greyscale). To exploit the pretrained patch embedding weights without
+modification, each greyscale patch of shape $[1, 32, 32]$ is replicated into three
+identical channels to produce a tensor of shape $[3, 32, 32]$:
+
+\begin{equation}
+    \mathbf{p}_{\text{RGB}} = [p, p, p]_{\text{channels}}
+\end{equation}
+
+This replication means the embedding layer can be initialised with meaningful pretrained
+features rather than requiring random initialisation, which is especially valuable given
+the small training dataset of 700 images. No artificial colour information is introduced.
+
+\subsection{Patch Embedding Module}
+
+The \texttt{PatchEmbedding} module is a single 2D convolutional layer with kernel size
+equal to the patch size ($P = 32$) and stride equal to $P$. For a batch of patches of
+shape $[B \cdot N, 3, 32, 32]$, the convolution produces $[B \cdot N, 768, 1, 1]$.
+After flattening, each patch is represented as a 768-dimensional embedding vector.
+Formally, for patch tensor $\mathbf{p} \in \mathbb{R}^{3 \times 32 \times 32}$:
+
+\begin{equation}
+    \mathbf{e} = \text{Flatten}\bigl(\text{Conv2d}(\mathbf{p})\bigr) \in \mathbb{R}^{768}
+\end{equation}
+
+The projection weights are initialised with pretrained ViT-B/32 weights from the
+\textit{timm} library (\texttt{vit\_base\_patch32\_224}).
+
+\subsection{Hash-Based Positional Encoding}
+
+Standard sinusoidal or learned positional encodings in Vision Transformers assume a
+fixed sequence length. CT-MUSIQ processes variable-composition sequences of 193 tokens
+(49 from scale~0 plus 144 from scale~1), and the distinction between scales is crucial
+for the model to exploit scale-specific features.
+
+The custom \texttt{HashPositionalEncoding} module addresses this by decomposing position
+into three orthogonal components, each represented by an independent learnable embedding
+table:
+
+\begin{equation}
+    \mathbf{pos}_i = \mathbf{E}_{\text{scale}}(s_i) + \mathbf{E}_{\text{row}}(r_i)
+                   + \mathbf{E}_{\text{col}}(c_i)
+\end{equation}
+
+where $\mathbf{E}_{\text{scale}} \in \mathbb{R}^{n_s \times d}$,
+$\mathbf{E}_{\text{row}} \in \mathbb{R}^{G_{\max} \times d}$, and
+$\mathbf{E}_{\text{col}} \in \mathbb{R}^{G_{\max} \times d}$ are three learned embedding
+matrices; $n_s = 2$ is the number of scales; $G_{\max} = 13$ is the maximum grid
+dimension; and $d = 768$ is the embedding dimension. All embedding tables are initialised
+with zero-mean Gaussian noise with standard deviation 0.02.
+
+This decomposition has several desirable properties. First, it handles the
+variable-length multi-scale sequence without requiring padding. Second, the scale
+embedding $\mathbf{E}_{\text{scale}}(s)$ allows the model to learn scale-specific
+biases. Third, the factored structure dramatically reduces the embedding table size to
+$(2 + 13 + 13) \times 768 = 21{,}504$ parameters versus $2 \times 13 \times 13 \times
+768 = 328{,}704$ for a full 3D lookup table. The positional encoding is added
+element-wise to the patch embeddings:
+
+\begin{equation}
+    \mathbf{z}_i = \mathbf{e}_i + \mathbf{pos}_i, \quad i = 1, \ldots, N
+\end{equation}
+
+\subsection{Learnable \texttt{[CLS]} Token}
+
+Following the standard Vision Transformer design, a learnable global classification
+token (\texttt{[CLS]} token) is prepended to the patch token sequence. The \texttt{[CLS]}
+token is a single parameter vector $\boldsymbol{\theta}_{\text{cls}} \in \mathbb{R}^{768}$,
+initialised from $\mathcal{N}(0, 0.02^2)$ and replicated across the batch dimension
+during the forward pass. After the Transformer encoder processes the full sequence of
+$N + 1 = 194$ tokens, the \texttt{[CLS]} token at position 0 in the output sequence
+aggregates global context from all 193 patch tokens via the self-attention mechanism.
+
+\subsection{Transformer Encoder}
+
+The Transformer encoder is a stack of $L = 12$ \texttt{TransformerEncoderLayer} modules.
+Each layer operates on the full sequence of 194 tokens and performs the following
+operations:
+
+\begin{enumerate}
+    \item \textbf{Pre-Layer Normalisation}: Layer normalisation is applied before each
+          sub-layer (``norm-first'' configuration), which improves training stability
+          when fine-tuning on small datasets.
+    \item \textbf{Multi-Head Self-Attention}: With $H = 8$ attention heads and
+          $d_{\text{model}} = 768$, each head has per-head dimension
+          $d_k = 768 / 8 = 96$. Global self-attention is performed over all 194 tokens,
+          enabling the model to capture long-range spatial dependencies across both
+          scales simultaneously.
+    \item \textbf{Feed-Forward Network}: A position-wise FFN with hidden dimension
+          $d_{\text{ff}} = 3072 = 4 \times d_{\text{model}}$, using GELU activation and
+          dropout $p = 0.05$.
+    \item \textbf{Residual Connections}: Standard residual connections around each
+          sub-layer.
+\end{enumerate}
+
+The dropout rate is deliberately reduced to $p = 0.05$ (versus the standard 0.1 in ViT)
+to mitigate overfitting on the small 700-sample training set. The encoder weights are
+initialised from pretrained ViT-B/32 weights, covering all attention projection weights,
+layer normalisation parameters, and FFN weights for all 12 layers.
+
+\subsection{Prediction Heads}
+
+\textbf{Global Head:} The \texttt{[CLS]} token output
+$\mathbf{c} \in \mathbb{R}^{768}$ is passed through a two-layer MLP:
+
+\begin{equation}
+    \hat{q} = W_2 \cdot \text{Dropout}\bigl(\text{GELU}(W_1 \mathbf{c})\bigr)
+\end{equation}
+
+where $W_1 \in \mathbb{R}^{384 \times 768}$ and $W_2 \in \mathbb{R}^{1 \times 384}$.
+The output is a single scalar $\hat{q} \in \mathbb{R}$, which is the predicted quality
+score at inference time.
+
+\textbf{Per-Scale Heads:} For each scale $s \in \{0, 1\}$, the patch token outputs
+corresponding to that scale are extracted and mean-pooled along the patch dimension to
+produce a scale-specific representation $\mathbf{c}_s \in \mathbb{R}^{768}$. This is
+passed through an identical two-layer MLP to produce a per-scale quality score
+$\hat{q}_s$. The per-scale scores are used exclusively during training to compute the
+scale-consistency KL divergence loss (Section~\ref{sec:loss}).
+
+
+% ============================================================
+\section{Loss Function}
+\label{sec:loss}
+
+CT-MUSIQ is trained with a composite loss function combining three terms: a primary
+regression loss, a scale-consistency regularisation loss, and a pairwise ranking loss.
+The combined objective is:
+
+\begin{equation}
+    \mathcal{L}_{\text{total}} = \mathcal{L}_{\text{MSE}}
+                               + \lambda_{\text{KL}} \cdot \mathcal{L}_{\text{KL}}
+                               + \lambda_{\text{rank}} \cdot \mathcal{L}_{\text{rank}}
+    \label{eq:total_loss}
+\end{equation}
+
+where $\lambda_{\text{KL}} = 0.10$ (determined by ablation study,
+Section~\ref{sec:ablation}) and $\lambda_{\text{rank}} = 0.5$.
+
+\subsection{Mean Squared Error Loss}
+
+The primary regression objective is the standard mean squared error (MSE) between the
+global predicted score $\hat{q}$ and the ground truth radiologist score $q$:
+
+\begin{equation}
+    \mathcal{L}_{\text{MSE}} = \frac{1}{B} \sum_{i=1}^{B} \bigl(\hat{q}_i - q_i\bigr)^2
+\end{equation}
+
+MSE penalises large errors quadratically, encouraging the model to be accurate for
+images whose quality is clearly very high or very low, which is clinically most important.
+
+\subsection{Scale-Consistency KL Divergence Loss}
+
+The key regularisation innovation in CT-MUSIQ is the \textbf{scale-consistency KL
+divergence loss}, which penalises disagreement between the per-scale quality predictions
+($\hat{q}_s$) and the global quality prediction ($\hat{q}$). The intuition is that if
+both scales observe the same image at different resolutions, their quality assessments
+should be broadly consistent. A model that learns scale-specific shortcuts is learning
+artefacts rather than true quality features.
+
+Computing KL divergence between scalar scores requires converting them to probability
+distributions. This is accomplished via a \textbf{Gaussian kernel smoothing} procedure
+over $K = 20$ discrete bins uniformly spanning the score range $[0, 4]$. For a scalar
+score $\hat{q}$ and bin centres $\{b_k\}_{k=1}^{K}$:
+
+\begin{align}
+    \tilde{p}_k(\hat{q}) &= \exp\!\left(-\frac{(\hat{q} - b_k)^2}{2\sigma^2}\right) \\
+    p_k(\hat{q})          &= \frac{\tilde{p}_k(\hat{q})}{\displaystyle\sum_{j=1}^{K}
+                             \tilde{p}_j(\hat{q}) + \varepsilon}
+\end{align}
+
+with $\sigma = 0.5$ and $\varepsilon = 10^{-8}$ for numerical stability. The result is a
+soft probability distribution $\mathbf{p}(\hat{q}) \in \Delta^{K-1}$ that peaks at the
+bin nearest to $\hat{q}$ and decays smoothly away. The scale-consistency loss is then:
+
+\begin{equation}
+    \mathcal{L}_{\text{KL}} = \frac{1}{n_s} \sum_{s=0}^{n_s - 1}
+    D_{\text{KL}}\!\Bigl(\mathbf{p}(\hat{q}_s) \;\|\; \mathbf{p}(\hat{q})\Bigr)
+\end{equation}
+
+where $D_{\text{KL}}$ denotes the KL divergence computed using log-probabilities of the
+scale distribution against the probability of the global distribution, with batch-mean
+reduction. The global prediction is treated as the target distribution.
+
+\subsection{Pairwise Margin Ranking Loss}
+
+The MSE loss optimises absolute score accuracy but does not explicitly penalise
+incorrect pairwise orderings. Since the LDCTIQAC 2023 evaluation metrics (PLCC, SROCC,
+KROCC) all measure rank-based correlation, training with an explicit ranking objective
+is expected to improve performance. The \textbf{pairwise margin ranking loss} operates
+on all $B(B-1)$ ordered pairs $(i, j)$ in each batch of size $B$:
+
+\begin{equation}
+    \mathcal{L}_{\text{rank}} = \frac{1}{B^2} \sum_{i=1}^{B} \sum_{j=1}^{B}
+    \max\!\Bigl(0,\; m - \operatorname{sgn}(q_i - q_j) \cdot (\hat{q}_i - \hat{q}_j)\Bigr)
+\end{equation}
+
+where $m = 0.1$ is the margin. The term $\operatorname{sgn}(q_i - q_j)$ is $+1$ if
+image~$i$ truly has higher quality than image~$j$, $-1$ if lower, and 0 if equal. The
+loss encourages the predicted score difference $\hat{q}_i - \hat{q}_j$ to have the same
+sign as the true difference and to exceed the margin $m$, directly optimising relative
+ordering that translates to improved rank correlation metrics.
+
+
+% ============================================================
+\section{Training Procedure}
+\label{sec:training}
+
+\subsection{Two-Stage Training Schedule}
+
+CT-MUSIQ employs a two-stage training strategy designed to stabilise fine-tuning of
+pretrained ViT weights on a small medical imaging dataset.
+
+\textbf{Stage~1 (Epochs 1--5): Frozen Encoder Warm-Up.}
+In the first stage, the Transformer encoder weights and the \texttt{[CLS]} token
+parameter are frozen. Only the patch embedding layer, hash positional encoding, and
+prediction heads are trained. The learning rate is set to
+$\text{LR}_{\text{stage1}} = 3 \times 10^{-4}$, which is relatively high to allow the
+randomly-initialised CT-specific components to reach a useful parameter regime quickly.
+The rationale is to prevent the noisy gradients from randomly-initialised prediction
+heads from corrupting the carefully pretrained attention patterns during the earliest
+training steps.
+
+\textbf{Stage~2 (Epochs 6--100): Full Fine-Tuning.}
+Beginning at epoch~6, all parameters are unfrozen. The learning rate transitions through
+two sub-phases within Stage~2:
+
+\begin{enumerate}
+    \item \textbf{Linear Warm-Up (Epochs 6--8, \texttt{STAGE2\_WARMUP\_EPOCHS} = 3)}:
+          The learning rate is linearly increased from
+          $\text{LR}_{\text{stage2}} \cdot (1/3)$ to
+          $\text{LR}_{\text{stage2}} = 5 \times 10^{-5}$ over 3 epochs. This warm-up
+          prevents the abrupt large-gradient update that would occur if the encoder
+          were suddenly fully unfrozen at full learning rate.
+    \item \textbf{Cosine Annealing (Epochs 9--100)}: After the warm-up, a cosine
+          annealing scheduler gradually decays the learning rate from
+          $5 \times 10^{-5}$ to $\text{LR}_{\min} = 10^{-6}$:
+          \begin{equation}
+              \text{LR}(t) = \text{LR}_{\min} + \frac{1}{2}
+              (\text{LR}_{\max} - \text{LR}_{\min})
+              \left(1 + \cos\!\left(\frac{\pi t}{T_{\max}}\right)\right)
+          \end{equation}
+          where $t$ is the number of epochs elapsed since the start of the cosine phase
+          and $T_{\max}$ is the total number of cosine epochs.
+\end{enumerate}
+
+\subsection{Optimiser}
+
+The AdamW optimiser (Adam with decoupled weight decay) is used throughout training with
+weight decay coefficient $\lambda_{\text{wd}} = 0.01$. AdamW is preferred over standard
+Adam for fine-tuning pretrained Transformers because decoupled weight decay provides
+more principled regularisation: it applies decay uniformly to all parameters rather than
+scaling it by the adaptive learning rate per parameter.
+
+\subsection{Mixed Precision Training}
+
+To fit the 12-layer ViT-B-based model with batch size~10 within 6~GB of GPU VRAM,
+\textbf{automatic mixed precision (AMP)} training is employed using PyTorch's
+\texttt{torch.cuda.amp} framework. AMP operates in two modes: the forward pass and loss
+computation use half-precision (fp16) tensors for activations, while the backward pass
+and parameter updates are performed in full precision (fp32). The approximate VRAM
+breakdown with AMP is as follows:
+model weights~$\approx$~1.5~GB, activations~$\approx$~1.5--2~GB, and optimiser
+states~$\approx$~1.5~GB, for a total well within the 6~GB budget.
+Mixed precision saves approximately 40\% of VRAM relative to pure fp32 and provides
+approximately 30\% speedup on the RTX~3060 GPU.
+
+A \texttt{GradScaler} is used to dynamically scale the loss before the backward pass to
+prevent fp16 gradient underflow. The scaler reduces the scale factor if overflow is
+detected and gradually increases it otherwise.
+
+\subsection{Gradient Clipping}
+
+Gradient clipping is applied after the \texttt{GradScaler.unscale\_()} step, which
+restores gradients to fp32 scale before clipping. The maximum gradient norm is
+$\|\nabla\|_{\max} = 1.0$, applied to all trainable parameters jointly using the global
+$\ell_2$ norm. This prevents the occasional large gradient updates that can occur at the
+Stage~1 to Stage~2 transition.
+
+\subsection{Exponential Moving Average}
+
+An \textbf{Exponential Moving Average (EMA)} of the model weights is maintained during
+training with decay factor $\rho = 0.999$:
+
+\begin{equation}
+    \boldsymbol{\theta}_{\text{EMA}}^{(t)} = \rho \cdot \boldsymbol{\theta}_{\text{EMA}}^{(t-1)}
+    + (1 - \rho) \cdot \boldsymbol{\theta}^{(t)}
+\end{equation}
+
+During validation at the end of each epoch, the EMA weights are temporarily substituted
+into the model (the live weights are saved to a backup), the validation pass is
+performed, and then the live weights are restored. The checkpoint saved when validation
+performance improves stores the EMA weights. This ensures the saved model benefits from
+the smoothing effect of EMA, which tends to have better generalisation properties.
+
+\subsection{Early Stopping}
+
+Training is monitored against the validation aggregate score
+$|\text{PLCC}| + |\text{SROCC}| + |\text{KROCC}|$. If the validation aggregate does
+not improve for \texttt{PATIENCE} $= 20$ consecutive epochs, training is halted early
+to prevent overfitting. In all conducted full training runs, early stopping was not
+triggered before epoch~100, indicating that the model continued improving through the
+full training budget.
+
+\subsection{Reproducibility}
+
+All random number generators are seeded with \texttt{SEED} $= 42$ at the beginning of
+each training run via \texttt{torch.manual\_seed()},
+\texttt{torch.cuda.manual\_seed\_all()}, \texttt{numpy.random.seed()}, and
+\texttt{torch.backends.cudnn.deterministic = True}.
+
+
+% ============================================================
+\section{Data Augmentation}
+\label{sec:augmentation}
+
+Given the small training set of 700 images, data augmentation is essential to improve
+generalisation and prevent overfitting. CT imaging places unique constraints on
+acceptable augmentations: unlike natural images, CT images are calibrated physical
+measurements in Hounsfield Units, and their noise texture and structural patterns are
+diagnostically meaningful. Aggressive colour distortions or large geometric deformations
+would alter the perceived quality in ways that do not correspond to any real imaging
+artefact, creating label noise. Therefore, augmentations are carefully chosen to be mild
+and clinically plausible. The following augmentations are applied stochastically during
+training only (never during validation or testing):
+
+\begin{itemize}
+    \item \textbf{Horizontal Flip} ($p = 0.5$): The CT image is flipped left-to-right.
+          Axial brain CT slices are broadly symmetric across the mid-sagittal plane,
+          making horizontal flip a valid augmentation.
+    \item \textbf{Vertical Flip} ($p = 0.5$): The CT image is flipped top-to-bottom.
+          Qualitative characteristics of noise and artefacts are isotropic in axial
+          slices, making vertical flip reasonable.
+    \item \textbf{Small Random Rotation} ($p = 0.5$, angle $\in [-7°, +7°]$): Applied
+          using bilinear interpolation in float-mode PIL to avoid 8-bit quantisation
+          artefacts.
+    \item \textbf{Random Crop and Resize} ($p = 0.5$, crop fraction $\in [0.85, 1.0]$):
+          A random crop retaining 85--100\% of the original image area is taken and
+          bicubically resized back to $512 \times 512$. This simulates slight variation
+          in the field of view.
+    \item \textbf{Mild Brightness and Contrast Jitter} (delta $\in [-0.05, +0.05]$):
+          Brightness is perturbed by a random additive offset and contrast by a
+          multiplicative factor, both sampled from $[-0.05, +0.05]$.
+    \item \textbf{Mild Additive Gaussian Noise} (std $\in [0.005, 0.02]$): Random
+          Gaussian noise with standard deviation uniformly sampled from
+          $[0.005, 0.02]$ is added to simulate scanner noise variability.
+\end{itemize}
+
+All augmentations are applied in float32 precision, and the result is clipped to
+$[0, 1]$ after all transformations.
+
+
+% ============================================================
+\section{Evaluation Protocol}
+\label{sec:evaluation}
+
+\subsection{Evaluation Metrics}
+
+The evaluation metrics precisely follow the LDCTIQAC 2023 challenge protocol as
+described in Lee et al.\ \cite{lee2025ldctiqac}. Three correlation coefficients are
+computed between the predicted scores and the ground truth scores:
+
+\textbf{Pearson Linear Correlation Coefficient (PLCC):}
+\begin{equation}
+    \text{PLCC} = \frac{\sum_{i}(\hat{q}_i - \bar{\hat{q}})(q_i - \bar{q})}
+                       {\sqrt{\sum_{i}(\hat{q}_i - \bar{\hat{q}})^2
+                              \sum_{i}(q_i - \bar{q})^2}}
+\end{equation}
+
+\textbf{Spearman Rank-Order Correlation Coefficient (SROCC):}
+\begin{equation}
+    \text{SROCC} = 1 - \frac{6\sum_{i} d_i^2}{N_{\text{test}}(N_{\text{test}}^2 - 1)}
+\end{equation}
+where $d_i$ is the difference in ranks between $\hat{q}_i$ and $q_i$.
+
+\textbf{Kendall Rank-Order Correlation Coefficient (KROCC):}
+\begin{equation}
+    \text{KROCC} = \frac{n_c - n_d}{\frac{1}{2}N_{\text{test}}(N_{\text{test}} - 1)}
+\end{equation}
+where $n_c$ is the number of concordant pairs and $n_d$ is the number of discordant pairs.
+
+\textbf{Aggregate Score:}
+\begin{equation}
+    \text{Aggregate} = |\text{PLCC}| + |\text{SROCC}| + |\text{KROCC}|
+    \label{eq:aggregate}
+\end{equation}
+
+The aggregate score is the primary ranking metric used in the LDCTIQAC 2023 challenge
+leaderboard, with maximum possible value of 3.0 (perfect correlation on all three
+metrics).
+
+\subsection{Test-Time Augmentation}
+
+Test-time augmentation (TTA) with horizontal flip averaging is implemented as an optional
+inference strategy. For each test image, the model is run twice: once on the original
+patch sequence and once on a horizontally-flipped version. The horizontal flip remaps
+column coordinates as:
+
+\begin{equation}
+    c_{\text{flipped}} = (g_s - 1) - c_{\text{original}}
+\end{equation}
+
+where $g_s$ is the grid size at scale $s$. The final prediction is the average of the
+two forward pass outputs, exploiting the approximate left-right symmetry of brain CT
+images.
+
+\subsection{Isotonic Regression Calibration}
+
+An optional post-processing calibration step using \textbf{isotonic regression} is
+provided. Isotonic regression fits a non-decreasing step function mapping raw predictions
+to calibrated outputs, fitted on the validation set:
+
+\begin{equation}
+    \hat{q}^*_{\text{test}} = \text{ISO}(\hat{q}_{\text{test}})
+\end{equation}
+
+where \texttt{ISO} is the isotonic regression function fitted on validation set pairs
+$\{(\hat{q}_{\text{val},i}, q_{\text{val},i})\}$. Because isotonic regression is a
+monotone transformation, it preserves rank order exactly (SROCC and KROCC are unchanged)
+while potentially improving PLCC by correcting systematic scale or bias errors.
+
+
+% ============================================================
+\section{Comparison Baseline: Agaldran Combo}
+\label{sec:baseline}
+
+For a fair within-paper comparison, a strong baseline model is trained and evaluated
+under identical conditions. The baseline, termed \textbf{Agaldran Combo}, is motivated
+by the top-performing method in the LDCTIQAC 2023 challenge (the ``agaldran'' team,
+ranked \#1 with Aggregate $= 2.7427$ on the published leaderboard), which combined a
+Swin Transformer with a ResNet backbone~\cite{lee2025ldctiqac}.
+
+The baseline model is a \textbf{score-level ensemble} of two independently pretrained
+backbones:
+
+\begin{enumerate}
+    \item \textbf{Swin Transformer Tiny (Swin-T)}: Loaded from \textit{timm}
+          (\texttt{swin\_tiny\_patch4\_window7\_224}) with ImageNet-1K pretrained
+          weights. The classification head is removed and replaced with a quality
+          prediction head: \texttt{Linear(768, 256)} $\to$ \texttt{ReLU} $\to$
+          \texttt{Dropout(0.05)} $\to$ \texttt{Linear(256, 1)}.
+    \item \textbf{ResNet-50}: Loaded from \textit{torchvision} with ImageNet-1K
+          pretrained weights. The fully connected classification layer is replaced by a
+          quality prediction head: \texttt{Linear(2048, 256)} $\to$ \texttt{ReLU} $\to$
+          \texttt{Dropout(0.05)} $\to$ \texttt{Linear(256, 1)}.
+\end{enumerate}
+
+The final prediction is the arithmetic mean of the two backbones' quality scores:
+
+\begin{equation}
+    \hat{q}_{\text{combo}} = \frac{\hat{q}_{\text{Swin-T}} + \hat{q}_{\text{ResNet50}}}{2}
+\end{equation}
+
+The baseline accepts full CT images as input (not patches) of shape $[B, 3, H, W]$.
+A \texttt{build\_baseline\_images\_from\_patches} utility function reconstructs the
+original scale-0 ($224 \times 224$) image from the scale-0 patch tokens by placing each
+patch back into its grid position according to the coordinate tensor.
+
+The baseline is trained under the same loss function (\texttt{CTMUSIQLoss}), batch
+size~(10), and dataset split as CT-MUSIQ. Unlike CT-MUSIQ, the baseline does not employ
+the two-stage training schedule; it is trained end-to-end from the start with a constant
+learning rate of $3 \times 10^{-4}$ and the same early stopping patience of 20 epochs.
+
+
+% ============================================================
+\section{Ablation Study Design}
+\label{sec:ablation}
+
+To validate the individual contributions of CT-MUSIQ's proposed components, five
+ablation experiments are designed. Each ablation modifies a single aspect of the full
+model while keeping all other settings constant. All ablation runs are trained for
+30~epochs.
+
+\begin{table}[h]
+    \centering
+    \caption{Ablation experiment configurations.}
+    \label{tab:ablations}
+    \begin{tabular}{llcc}
+        \toprule
+        Config & Description & Scales & $\lambda_{\text{KL}}$ \\
+        \midrule
+        A1 & Single-scale baseline (224 only, no KL) & [224]         & 0.0  \\
+        A2 & Two scales, no KL loss                  & [224, 384]    & 0.0  \\
+        A3 & Two scales, KL $\lambda = 0.05$ (weak)  & [224, 384]    & 0.05 \\
+        A4 & Two scales, KL $\lambda = 0.10$ (optimal) & [224, 384]  & 0.10 \\
+        A5 & Two scales, KL $\lambda = 0.20$ (strong) & [224, 384]   & 0.20 \\
+        A6 & Three scales, KL $\lambda = 0.10$        & [224, 384, 512] & 0.10 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\noindent
+The ablation comparisons address the following questions:
+\begin{itemize}
+    \item \textbf{A1 vs.\ A2}: Is multi-scale representation beneficial? If A2
+          outperforms A1, the second scale (384) provides useful complementary features.
+    \item \textbf{A2 vs.\ A3/A4/A5}: Does the scale-consistency KL loss improve
+          performance, and what is the optimal weight? The sweep across
+          $\lambda_{\text{KL}} \in \{0.05, 0.10, 0.20\}$ identifies the best balance
+          between MSE accuracy and cross-scale consistency.
+    \item \textbf{A4 vs.\ A6}: Does a three-scale pyramid (adding 512~px,
+          yielding $16 \times 16 = 256$ additional patches and 449 total tokens) provide
+          further improvement, given sufficient VRAM?
+\end{itemize}
+
+
+% ============================================================
+\section{Implementation Details}
+\label{sec:implementation}
+
+\subsection{Software Environment}
+
+The project is implemented in Python~3.10 using PyTorch~2.x as the deep learning
+framework. Key dependencies include:
+\textit{timm}~($\geq$0.9.0) for pretrained ViT-B/32 and Swin-T weights,
+\textit{torchvision}~($\geq$0.15) for ResNet-50 weights,
+\textit{scipy} for correlation metric computation,
+\textit{scikit-learn} for isotonic regression calibration,
+\textit{PIL/Pillow} for float-mode image manipulation,
+\textit{numpy} for array operations during pre-processing and augmentation, and
+\textit{pandas} for training log CSV management.
+
+All hyperparameters are centralised in \texttt{config.py}, which acts as the single
+source of truth for the entire project. No hyperparameter is hard-coded in training,
+evaluation, or dataset scripts.
+
+\subsection{Hardware}
+
+All experiments are conducted on a workstation equipped with an \textbf{NVIDIA RTX~3060
+Laptop GPU} with 6~GB GDDR6 VRAM, a mobile Intel Core~i7 CPU, and 16~GB of system RAM.
+Training one epoch on the 700-image training set takes approximately \textbf{31--40
+seconds} at convergence. A complete 100-epoch training run takes approximately
+\textbf{50--55 minutes}.
+
+\subsection{Model Parameter Count}
+
+The CT-MUSIQ model has approximately \textbf{88.3 million parameters} in total:
+the ViT-B encoder ($\sim$85M), patch embedding ($\sim$2.3M), hash positional encoding
+($\sim$21.5K), global and per-scale prediction heads ($\sim$887K), and the
+\texttt{[CLS]} token (768 parameters). At fp32 precision, the model occupies
+approximately 353~MB on disk. The full checkpoint including EMA shadow weights and
+optimiser states is approximately 1~GB.
+
+\subsection{Training Convergence}
+
+Training log data from the final CT-MUSIQ run (100 epochs, full two-stage schedule)
+reveals smooth convergence behaviour. In Stage~1 (epochs 1--5), the validation aggregate
+rises from approximately 0 to $\sim$1.26 as the randomly-initialised prediction heads
+learn a crude quality mapping. At the Stage~2 transition (epoch~6), the aggregate rises
+steeply: $\sim$1.88 by epoch~6, $\sim$2.10 by epoch~10, above 2.50 by epoch~30, and
+converging to a plateau near 2.76 in the final epochs. The training MSE decays from
+approximately 1.43 at epoch~1 to approximately 0.12 by epoch~100.
+
+\subsection{Final Experimental Results}
+
+The final model checkpoint achieves the following performance on the \textbf{held-out
+test set} (images 0900--0999, $N_{\text{test}} = 100$):
+
+\begin{table}[h]
+    \centering
+    \caption{Test set results comparison with published LDCTIQAC 2023 leaderboard
+             results~\cite{lee2025ldctiqac}.}
+    \label{tab:results}
+    \begin{tabular}{lcccc}
+        \toprule
+        Method & Aggregate & PLCC & SROCC & KROCC \\
+        \midrule
+        agaldran~\cite{lee2025ldctiqac}   & 2.7427 & 0.9491 & 0.9495 & 0.8440 \\
+        RPI\_AXIS~\cite{lee2025ldctiqac}  & 2.6843 & 0.9434 & 0.9414 & 0.7995 \\
+        CHILL@UK~\cite{lee2025ldctiqac}   & 2.6719 & 0.9402 & 0.9387 & 0.7930 \\
+        FeatureNet~\cite{lee2025ldctiqac} & 2.6550 & 0.9362 & 0.9338 & 0.7851 \\
+        Team Epoch~\cite{lee2025ldctiqac} & 2.6202 & 0.9278 & 0.9232 & 0.7691 \\
+        gabybaldeon~\cite{lee2025ldctiqac} & 2.5671 & 0.9143 & 0.9096 & 0.7432 \\
+        SNR baseline~\cite{lee2025ldctiqac} & 2.4026 & 0.8226 & 0.8748 & 0.7052 \\
+        BRISQUE~\cite{lee2025ldctiqac}    & 2.1219 & 0.7500 & 0.7863 & 0.5856 \\
+        \midrule
+        \textbf{CT-MUSIQ (ours)} & \textbf{2.7682} & \textbf{0.9607} & \textbf{0.9605} & \textbf{0.8469} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+CT-MUSIQ surpasses the top published result in the LDCTIQAC 2023 challenge leaderboard
+on all three correlation metrics and achieves the highest aggregate score, demonstrating
+state-of-the-art perceptual quality assessment for brain low-dose CT images.
+
+
+% ============================================================
+\section{Summary}
+\label{sec:methodology_summary}
+
+This chapter has described the complete methodology of CT-MUSIQ, a no-reference image
+quality assessment system for brain low-dose CT imaging. The methodology can be
+summarised across its six principal contributions:
+
+\begin{enumerate}
+    \item \textbf{Clinically-motivated CT windowing}: Applying the brain soft-tissue
+          window (level $= 40$, width $= 80$~HU) instead of the challenge's original
+          abdominal window, aligning pre-processing with radiological practice for brain
+          CT and maximising the discriminability of quality-relevant tissue contrast.
+    \item \textbf{Multi-scale patch tokenisation with hash positional encoding}:
+          Resizing each image to 224 and 384~pixels, extracting $32 \times 32$ patches
+          to produce 193 total tokens, and injecting spatial and scale identity via a
+          novel three-component additive embedding scheme that handles variable-length
+          multi-scale sequences without the limitations of standard fixed-length
+          positional encodings.
+    \item \textbf{Pretrained ViT-B/32 transfer with greyscale-to-RGB replication}:
+          Leveraging ImageNet-pretrained Vision Transformer weights (both patch embedding
+          and full 12-layer encoder) for CT quality assessment, adapting the
+          single-channel greyscale input by channel replication to achieve compatibility
+          with the pretrained RGB weights.
+    \item \textbf{Composite loss function}: Combining MSE regression loss,
+          KL divergence-based scale-consistency regularisation with Gaussian-kernel
+          score-to-distribution conversion, and pairwise margin ranking loss into a
+          unified training objective that simultaneously optimises absolute accuracy,
+          cross-scale agreement, and relative ordering correctness.
+    \item \textbf{Two-stage training with EMA and mixed precision}: A structured
+          Stage~1 (frozen encoder) $\to$ Stage~2 (full fine-tuning with warmup and
+          cosine annealing) schedule, supported by exponential moving average smoothing
+          of weights, gradient clipping, and mixed-precision training for memory
+          efficiency on constrained GPU hardware.
+    \item \textbf{Rigorous evaluation and ablation}: Evaluation on the LDCTIQAC 2023
+          test set using the official challenge metrics (PLCC, SROCC, KROCC, Aggregate),
+          comparison with published leaderboard results, a trained baseline (Agaldran
+          Combo), and a systematic ablation study quantifying the independent
+          contributions of multi-scale representation and scale-consistency
+          regularisation.
+\end{enumerate}

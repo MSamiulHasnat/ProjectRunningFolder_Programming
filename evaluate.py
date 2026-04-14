@@ -1,5 +1,5 @@
 """
-evaluate.py — Model Evaluation Script
+evaluate.py -- Model Evaluation Script
 ======================================
 
 Evaluate trained models on the test set.
@@ -13,11 +13,13 @@ Works with CT-MUSIQ and one combined baseline method.
 
 Usage:
   python evaluate.py                                    # Evaluate CT-MUSIQ
-    python evaluate.py --model agaldran_combo            # Evaluate combined baseline
+  python evaluate.py --model agaldran_combo             # Evaluate combined baseline
   python evaluate.py --model ct_musiq --checkpoint path.pth
+  python evaluate.py --tta                              # TTA with horizontal flip
+  python evaluate.py --tta --calibrate                  # TTA + val-set calibration
 
 Author: M Samiul Hasnat, Sichuan University
-Project: CT-MUSIQ — Undergraduate Thesis
+Project: CT-MUSIQ -- Undergraduate Thesis
 """
 
 import os
@@ -29,6 +31,7 @@ from typing import Dict, List, Tuple, Optional
 
 import torch
 from scipy.stats import pearsonr, spearmanr, kendalltau
+from sklearn.isotonic import IsotonicRegression
 
 # Import project modules
 import config
@@ -105,61 +108,118 @@ def build_baseline_images_from_patches(
     return torch.stack(images, dim=0)
 
 
+def flip_patches_horizontal(
+    patches: torch.Tensor,
+    coords: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Horizontally flip all patches and mirror their column coordinates.
+
+    For each scale with grid_size G, the column index is remapped:
+        col_new = (G - 1) - col_old
+
+    Args:
+        patches: [B, N, 3, P, P]
+        coords:  [B, N, 3]  -- (scale_idx, row_idx, col_idx)
+
+    Returns:
+        (patches_flipped, coords_flipped) with same shapes
+    """
+    patches_flipped = torch.flip(patches, dims=[-1])  # flip width dimension
+    coords_flipped = coords.clone()
+
+    col_vals = coords_flipped[:, :, 2].clone()  # [B, N] — col indices
+
+    for scale_i, scale in enumerate(config.SCALES):
+        grid_size = scale // config.PATCH_SIZE
+        mask = coords[:, :, 0] == scale_i  # [B, N] bool mask
+        col_vals[mask] = (grid_size - 1) - col_vals[mask]
+
+    coords_flipped[:, :, 2] = col_vals
+    return patches_flipped, coords_flipped
+
+
+def calibrate_predictions(
+    train_preds: np.ndarray,
+    train_targets: np.ndarray,
+    test_preds: np.ndarray
+) -> np.ndarray:
+    """
+    Apply isotonic regression calibration fitted on val-set predictions.
+
+    Isotonic regression learns a monotone mapping from raw predictions to
+    calibrated scores, preserving rank order while correcting scale/bias.
+    This cannot harm SROCC/KROCC and typically improves PLCC.
+
+    Args:
+        train_preds:  Val-set raw predictions
+        train_targets: Val-set ground-truth scores
+        test_preds:   Test-set raw predictions to calibrate
+
+    Returns:
+        Calibrated test predictions
+    """
+    ir = IsotonicRegression(out_of_bounds='clip')
+    ir.fit(train_preds, train_targets)
+    return ir.predict(test_preds)
+
+
 @torch.no_grad()
 def evaluate_model(
     model,
     test_loader,
     device: torch.device,
-    model_type: str = 'ct_musiq'
+    model_type: str = 'ct_musiq',
+    use_tta: bool = False
 ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
-    Run model on test set and collect predictions.
-    
+    Run model on test/val set and collect predictions.
+
     Args:
         model: Trained model
-        test_loader: Test data loader
+        test_loader: Data loader (test or val)
         device: Device to run on
         model_type: Type of model ('ct_musiq', 'agaldran_combo')
-        
+        use_tta: If True, average predictions from original + horizontal flip
+
     Returns:
         Tuple of (predictions, targets, image_ids)
     """
     model.eval()
-    
+
     all_predictions = []
     all_targets = []
     all_image_ids = []
-    
+
     for batch in test_loader:
-        # Move data to device
         if model_type == 'ct_musiq':
-            # CT-MUSIQ uses patches and coordinates
             patches = batch['patches'].to(device)
             coords = batch['coords'].to(device)
             scores = batch['score'].to(device)
             image_ids = batch['image_id']
-            
-            # Forward pass
+
             output = model(patches, coords)
+            pred = output['score'].squeeze(-1)
+
+            if use_tta:
+                patches_f, coords_f = flip_patches_horizontal(patches, coords)
+                output_f = model(patches_f, coords_f)
+                pred = (pred + output_f['score'].squeeze(-1)) / 2.0
+
         else:
-            # Baseline model expects full images; reconstruct from scale-0 patches
             patches = batch['patches'].to(device)
             coords = batch['coords'].to(device)
             images = build_baseline_images_from_patches(patches, coords, target_scale_idx=0)
             scores = batch['score'].to(device)
             image_ids = batch['image_id']
-            
-            # Forward pass
+
             output = model(images, None)
-        
-        # Collect predictions and targets
-        predictions = output['score'].squeeze(-1).cpu().numpy()
-        targets = scores.cpu().numpy()
-        
-        all_predictions.extend(predictions)
-        all_targets.extend(targets)
+            pred = output['score'].squeeze(-1)
+
+        all_predictions.extend(pred.cpu().numpy())
+        all_targets.extend(scores.cpu().numpy())
         all_image_ids.extend(image_ids)
-    
+
     return np.array(all_predictions), np.array(all_targets), all_image_ids
 
 
@@ -264,87 +324,120 @@ def save_results_csv(metrics: Dict[str, float], save_path: str) -> None:
 def evaluate(
     model_type: str = 'ct_musiq',
     checkpoint_path: Optional[str] = None,
-    batch_size: int = config.BATCH_SIZE
+    batch_size: int = config.BATCH_SIZE,
+    use_tta: bool = False,
+    use_calibration: bool = False
 ) -> Dict[str, float]:
     """
     Main evaluation function.
-    
+
     Args:
         model_type: Type of model ('ct_musiq', 'agaldran_combo')
-        checkpoint_path: Path to model checkpoint (default: best_model.pth)
+        checkpoint_path: Path to model checkpoint (default: auto-detected)
         batch_size: Batch size for evaluation
-        
+        use_tta: If True, average predictions with horizontal flip TTA
+        use_calibration: If True, apply isotonic regression calibration using val set
+
     Returns:
         Dictionary with computed metrics
     """
     print("="*70)
     print(f"{model_type.upper()} Evaluation")
+    if use_tta:
+        print("  TTA: enabled (horizontal flip)")
+    if use_calibration:
+        print("  Calibration: enabled (isotonic regression on val set)")
     print("="*70)
-    
+
     # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\nDevice: {device}")
-    
-    # Determine checkpoint path
+
+    # Determine checkpoint path -- prefer the per-model subdirectory
     if checkpoint_path is None:
         if model_type == 'ct_musiq':
-            checkpoint_path = config.BEST_MODEL_PATH
+            per_model_path = os.path.join(config.RESULTS_DIR, 'ct_musiq', 'ct_musiq_best.pth')
+            if os.path.exists(per_model_path):
+                checkpoint_path = per_model_path
+            else:
+                checkpoint_path = config.BEST_MODEL_PATH  # legacy fallback
         else:
             model_results_dir = os.path.join(config.RESULTS_DIR, model_type)
             checkpoint_path = os.path.join(model_results_dir, f'{model_type}_best.pth')
-    
+
     if not os.path.exists(checkpoint_path):
-        print(f"\n✗ Checkpoint not found: {checkpoint_path}")
+        print(f"\nFAIL Checkpoint not found: {checkpoint_path}")
         print(f"  Please train {model_type} first: python train.py --model {model_type}")
         sys.exit(1)
-    
+
     print(f"Checkpoint: {checkpoint_path}")
-    
+
     # Load checkpoint
     print("\nLoading checkpoint...")
     checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-    
-    # Get model type from checkpoint if available
-    checkpoint_model_type = checkpoint.get('model_type', model_type)
-    
     print(f"  Epoch: {checkpoint['epoch'] + 1}")
     print(f"  Best aggregate: {checkpoint['best_aggregate']:.4f}")
-    
-    # Create test data loader
-    print("\nCreating test data loader...")
-    _, _, test_loader = create_dataloaders(
+
+    # Create data loaders
+    print("\nCreating data loaders...")
+    train_loader, val_loader, test_loader = create_dataloaders(
         batch_size=batch_size,
         num_workers=0,
         pin_memory=True
     )
+    print(f"  Val images:  {len(val_loader.dataset)}")
     print(f"  Test images: {len(test_loader.dataset)}")
-    
+
     # Create model
     print(f"\nCreating {model_type.upper()} model...")
     if model_type == 'ct_musiq':
         checkpoint_config = checkpoint.get('config', {})
         scales = checkpoint_config.get('scales', config.SCALES)
         num_scales = len(scales)
-        
         model = create_model(
             num_scales=num_scales,
-            pretrained=False,  # We'll load from checkpoint
+            pretrained=False,
             device=device
         )
     else:
         model = get_model(model_type, pretrained=False)
         model = model.to(device)
-    
-    # Load model weights
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print("  ✓ Model weights loaded")
-    
-    # Evaluate
+
+    missing, unexpected = model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+    if missing:
+        print(f"  WARN Missing keys (random init, not critical): {missing}")
+    if unexpected:
+        print(f"  WARN Unexpected keys (ignored): {unexpected}")
+    print("  OK Model weights loaded")
+
+    # Optional calibration: fit isotonic regression on val set
+    calibrator = None
+    if use_calibration:
+        print("\nFitting calibration on val set...")
+        val_preds, val_targets, _ = evaluate_model(
+            model, val_loader, device, model_type=model_type, use_tta=use_tta
+        )
+        val_metrics_raw = compute_metrics(val_preds, val_targets)
+        print(f"  Val raw  -- PLCC: {val_metrics_raw['PLCC']:.4f}  SROCC: {val_metrics_raw['SROCC']:.4f}  "
+              f"KROCC: {val_metrics_raw['KROCC']:.4f}  Agg: {val_metrics_raw['Aggregate']:.4f}")
+
+        ir = IsotonicRegression(out_of_bounds='clip')
+        ir.fit(val_preds, val_targets)
+        calibrator = ir
+        val_preds_cal = ir.predict(val_preds)
+        val_metrics_cal = compute_metrics(val_preds_cal, val_targets)
+        print(f"  Val calib -- PLCC: {val_metrics_cal['PLCC']:.4f}  SROCC: {val_metrics_cal['SROCC']:.4f}  "
+              f"KROCC: {val_metrics_cal['KROCC']:.4f}  Agg: {val_metrics_cal['Aggregate']:.4f}")
+
+    # Evaluate on test set
     print("\nRunning evaluation on test set...")
     predictions, targets, image_ids = evaluate_model(
-        model, test_loader, device, model_type=model_type
+        model, test_loader, device, model_type=model_type, use_tta=use_tta
     )
-    
+
+    if calibrator is not None:
+        predictions = calibrator.predict(predictions)
+
     # Compute metrics
     metrics = compute_metrics(predictions, targets)
     
@@ -396,7 +489,7 @@ def evaluate(
     )
     save_results_csv(metrics, results_path)
     
-    print("\n✓ Evaluation complete!")
+    print("\nOK Evaluation complete!")
     
     return metrics
 
@@ -417,7 +510,7 @@ def main():
         '--checkpoint',
         type=str,
         default=None,
-        help='Path to checkpoint (default: auto-detected)'
+        help='Path to checkpoint (default: auto-detected from results/ct_musiq/)'
     )
     parser.add_argument(
         '--batch_size',
@@ -425,14 +518,28 @@ def main():
         default=config.BATCH_SIZE,
         help='Batch size for evaluation'
     )
-    
+    parser.add_argument(
+        '--tta',
+        action='store_true',
+        default=False,
+        help='Enable test-time augmentation (horizontal flip averaging)'
+    )
+    parser.add_argument(
+        '--calibrate',
+        action='store_true',
+        default=False,
+        help='Apply isotonic regression calibration fitted on the val set'
+    )
+
     args = parser.parse_args()
-    
+
     # Run evaluation
     metrics = evaluate(
         model_type=args.model,
         checkpoint_path=args.checkpoint,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        use_tta=args.tta,
+        use_calibration=args.calibrate
     )
 
 

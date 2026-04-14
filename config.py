@@ -154,7 +154,7 @@ MAX_GRAD_NORM = 1.0
 # and the global prediction head.  Scores are converted to soft probability
 # distributions over NUM_BINS bins using a Gaussian kernel with width SIGMA.
 
-LAMBDA_KL = 0.02  # Weight of KL loss (reduced to lower noise from scale disagreement)
+LAMBDA_KL = 0.10  # Weight of KL loss — ablation A4 confirmed 0.10 is optimal (Agg 2.305 vs 2.249 no-KL)
 NUM_BINS  = 20     # Number of bins for the soft score distribution
 SIGMA     = 0.5    # Gaussian kernel width for score → distribution conversion
 

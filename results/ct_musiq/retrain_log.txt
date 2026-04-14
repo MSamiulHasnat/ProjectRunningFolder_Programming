@@ -1,0 +1,663 @@
+C:\Users\Samiul\Desktop\Sichuan_University\Thesis\ProjectRunningFolder_Programming\venv_cuda\Lib\site-packages\torch\nn\modules\transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+======================================================================
+Training CT_MUSIQ Model
+======================================================================
+
+Device: cuda
+GPU: NVIDIA GeForce RTX 3060 Laptop GPU
+VRAM: 6.0 GB
+
+Creating data loaders...
+Initialized train dataset:
+  Images: 700
+  Scales: [224, 384] -> 193 total patches
+  Augmentation: True
+Initialized val dataset:
+  Images: 200
+  Scales: [224, 384] -> 193 total patches
+  Augmentation: False
+Initialized test dataset:
+  Images: 100
+  Scales: [224, 384] -> 193 total patches
+  Augmentation: False
+  Train: 700 images
+  Val:   200 images
+  Test:  100 images
+
+Creating CT_MUSIQ model...
+
+Loading pretrained ViT-B/32 weights...
+  ✓ Loaded 146 pretrained layers
+CT-MUSIQ Model Initialized:
+  Total parameters:     88,325,379
+  Trainable parameters: 88,325,379
+  Model size:           336.9 MB (fp32)
+  Model loaded successfully
+
+Creating loss criterion (lambda_kl=0.1)...
+
+Creating optimizer...
+
+✓ Using mixed precision (fp16) for faster training
+
+======================================================================
+Starting Training
+======================================================================
+
+--- Stage 1: Frozen Encoder (Epochs 1-5) ---
+  Frozen: transformer encoder + [CLS] token
+  Trainable: patch_embed, pos_encoding, prediction heads
+
+Epoch 1/100 | CT_MUSIQ | LR: 3.00e-04
+  Train — Loss: 1.5747 (MSE: 1.4607, KL: 0.3651)
+  Val   — Loss: 3.9243 (MSE: 3.8823, KL: 0.0366)
+  Val   — PLCC: 0.5143 | SROCC: 0.5120 | KROCC: 0.3547 | Agg: 1.3810
+  → New best! Saving checkpoint. (Aggregate: 1.3810)
+
+Epoch 2/100 | CT_MUSIQ | LR: 3.00e-04
+  Train — Loss: 1.2718 (MSE: 1.1708, KL: 0.3274)
+  Val   — Loss: 3.3481 (MSE: 3.3020, KL: 0.0432)
+  Val   — PLCC: 0.4415 | SROCC: 0.4398 | KROCC: 0.3119 | Agg: 1.1932
+  → No improvement. Patience: 1/20
+
+Epoch 3/100 | CT_MUSIQ | LR: 3.00e-04
+  Train — Loss: 1.1837 (MSE: 1.0981, KL: 0.2085)
+  Val   — Loss: 2.9310 (MSE: 2.8815, KL: 0.0389)
+  Val   — PLCC: 0.2992 | SROCC: 0.3589 | KROCC: 0.2484 | Agg: 0.9065
+  → No improvement. Patience: 2/20
+
+Epoch 4/100 | CT_MUSIQ | LR: 3.00e-04
+  Train — Loss: 1.1956 (MSE: 1.1061, KL: 0.2588)
+  Val   — Loss: 2.3879 (MSE: 2.3385, KL: 0.0567)
+  Val   — PLCC: 0.3864 | SROCC: 0.4322 | KROCC: 0.3008 | Agg: 1.1194
+  → No improvement. Patience: 3/20
+
+Epoch 5/100 | CT_MUSIQ | LR: 3.00e-04
+  Train — Loss: 1.1539 (MSE: 1.0598, KL: 0.2508)
+  Val   — Loss: 2.0794 (MSE: 2.0360, KL: 0.0193)
+  Val   — PLCC: 0.4517 | SROCC: 0.4671 | KROCC: 0.3216 | Agg: 1.2404
+  → No improvement. Patience: 4/20
+
+--- Stage 2: Full Fine-tuning (Epochs 6-100) ---
+  Unfrozen: all parameters
+
+Epoch 6/100 | CT_MUSIQ | LR: 1.67e-05
+  Train — Loss: 1.1144 (MSE: 1.0344, KL: 0.1828)
+  Val   — Loss: 1.8842 (MSE: 1.8431, KL: 0.0207)
+  Val   — PLCC: 0.5699 | SROCC: 0.6267 | KROCC: 0.4473 | Agg: 1.6439
+  → New best! Saving checkpoint. (Aggregate: 1.6439)
+
+Epoch 7/100 | CT_MUSIQ | LR: 3.33e-05
+  Train — Loss: 0.8278 (MSE: 0.7328, KL: 0.3673)
+  Val   — Loss: 1.7464 (MSE: 1.7079, KL: 0.0260)
+  Val   — PLCC: 0.5699 | SROCC: 0.6139 | KROCC: 0.4470 | Agg: 1.6309
+  → No improvement. Patience: 1/20
+
+Epoch 8/100 | CT_MUSIQ | LR: 5.00e-05
+  Train — Loss: 0.7629 (MSE: 0.6915, KL: 0.1603)
+  Val   — Loss: 1.5772 (MSE: 1.5415, KL: 0.0259)
+  Val   — PLCC: 0.6252 | SROCC: 0.6429 | KROCC: 0.4658 | Agg: 1.7339
+  → New best! Saving checkpoint. (Aggregate: 1.7339)
+
+Epoch 9/100 | CT_MUSIQ | LR: 5.00e-05
+  Train — Loss: 0.7433 (MSE: 0.6760, KL: 0.1237)
+  Val   — Loss: 1.4470 (MSE: 1.4119, KL: 0.0272)
+  Val   — PLCC: 0.6707 | SROCC: 0.6603 | KROCC: 0.4742 | Agg: 1.8052
+  → New best! Saving checkpoint. (Aggregate: 1.8052)
+
+Epoch 10/100 | CT_MUSIQ | LR: 5.00e-05
+  Train — Loss: 0.7423 (MSE: 0.6768, KL: 0.0875)
+  Val   — Loss: 1.3432 (MSE: 1.3103, KL: 0.0224)
+  Val   — PLCC: 0.7274 | SROCC: 0.7024 | KROCC: 0.5054 | Agg: 1.9353
+  → New best! Saving checkpoint. (Aggregate: 1.9353)
+
+Epoch 11/100 | CT_MUSIQ | LR: 4.99e-05
+  Train — Loss: 0.6765 (MSE: 0.6105, KL: 0.0956)
+  Val   — Loss: 1.2570 (MSE: 1.2249, KL: 0.0229)
+  Val   — PLCC: 0.7555 | SROCC: 0.7519 | KROCC: 0.5464 | Agg: 2.0538
+  → New best! Saving checkpoint. (Aggregate: 2.0538)
+
+Epoch 12/100 | CT_MUSIQ | LR: 4.99e-05
+  Train — Loss: 0.6542 (MSE: 0.5936, KL: 0.1333)
+  Val   — Loss: 1.1804 (MSE: 1.1484, KL: 0.0288)
+  Val   — PLCC: 0.7709 | SROCC: 0.7591 | KROCC: 0.5508 | Agg: 2.0807
+  → New best! Saving checkpoint. (Aggregate: 2.0807)
+
+Epoch 13/100 | CT_MUSIQ | LR: 4.98e-05
+  Train — Loss: 0.5782 (MSE: 0.5208, KL: 0.0848)
+  Val   — Loss: 1.1130 (MSE: 1.0809, KL: 0.0313)
+  Val   — PLCC: 0.7811 | SROCC: 0.7611 | KROCC: 0.5533 | Agg: 2.0955
+  → New best! Saving checkpoint. (Aggregate: 2.0955)
+
+Epoch 14/100 | CT_MUSIQ | LR: 4.96e-05
+  Train — Loss: 0.5890 (MSE: 0.5351, KL: 0.0562)
+  Val   — Loss: 1.0404 (MSE: 1.0080, KL: 0.0326)
+  Val   — PLCC: 0.7893 | SROCC: 0.7699 | KROCC: 0.5625 | Agg: 2.1217
+  → New best! Saving checkpoint. (Aggregate: 2.1217)
+
+Epoch 15/100 | CT_MUSIQ | LR: 4.95e-05
+  Train — Loss: 0.6092 (MSE: 0.5467, KL: 0.1340)
+  Val   — Loss: 0.9633 (MSE: 0.9308, KL: 0.0298)
+  Val   — PLCC: 0.7949 | SROCC: 0.7750 | KROCC: 0.5683 | Agg: 2.1382
+  → New best! Saving checkpoint. (Aggregate: 2.1382)
+
+Epoch 16/100 | CT_MUSIQ | LR: 4.93e-05
+  Train — Loss: 0.5437 (MSE: 0.4908, KL: 0.0400)
+  Val   — Loss: 0.8869 (MSE: 0.8541, KL: 0.0269)
+  Val   — PLCC: 0.7992 | SROCC: 0.7837 | KROCC: 0.5797 | Agg: 2.1626
+  → New best! Saving checkpoint. (Aggregate: 2.1626)
+
+Epoch 17/100 | CT_MUSIQ | LR: 4.91e-05
+  Train — Loss: 0.5254 (MSE: 0.4706, KL: 0.0432)
+  Val   — Loss: 0.8059 (MSE: 0.7727, KL: 0.0255)
+  Val   — PLCC: 0.8037 | SROCC: 0.7926 | KROCC: 0.5889 | Agg: 2.1852
+  → New best! Saving checkpoint. (Aggregate: 2.1852)
+
+Epoch 18/100 | CT_MUSIQ | LR: 4.89e-05
+  Train — Loss: 0.5654 (MSE: 0.5140, KL: 0.0380)
+  Val   — Loss: 0.7335 (MSE: 0.7001, KL: 0.0251)
+  Val   — PLCC: 0.8088 | SROCC: 0.8003 | KROCC: 0.5969 | Agg: 2.2061
+  → New best! Saving checkpoint. (Aggregate: 2.2061)
+
+Epoch 19/100 | CT_MUSIQ | LR: 4.86e-05
+  Train — Loss: 0.4873 (MSE: 0.4394, KL: 0.0381)
+  Val   — Loss: 0.6583 (MSE: 0.6252, KL: 0.0226)
+  Val   — PLCC: 0.8148 | SROCC: 0.8131 | KROCC: 0.6134 | Agg: 2.2413
+  → New best! Saving checkpoint. (Aggregate: 2.2413)
+
+Epoch 20/100 | CT_MUSIQ | LR: 4.83e-05
+  Train — Loss: 0.4604 (MSE: 0.4123, KL: 0.0334)
+  Val   — Loss: 0.5931 (MSE: 0.5607, KL: 0.0212)
+  Val   — PLCC: 0.8228 | SROCC: 0.8273 | KROCC: 0.6326 | Agg: 2.2828
+  → New best! Saving checkpoint. (Aggregate: 2.2828)
+
+Epoch 21/100 | CT_MUSIQ | LR: 4.80e-05
+  Train — Loss: 0.5081 (MSE: 0.4630, KL: 0.0313)
+  Val   — Loss: 0.5402 (MSE: 0.5089, KL: 0.0202)
+  Val   — PLCC: 0.8314 | SROCC: 0.8400 | KROCC: 0.6498 | Agg: 2.3212
+  → New best! Saving checkpoint. (Aggregate: 2.3212)
+
+Epoch 22/100 | CT_MUSIQ | LR: 4.76e-05
+  Train — Loss: 0.4443 (MSE: 0.4001, KL: 0.0290)
+  Val   — Loss: 0.4901 (MSE: 0.4599, KL: 0.0200)
+  Val   — PLCC: 0.8401 | SROCC: 0.8512 | KROCC: 0.6661 | Agg: 2.3574
+  → New best! Saving checkpoint. (Aggregate: 2.3574)
+
+Epoch 23/100 | CT_MUSIQ | LR: 4.73e-05
+  Train — Loss: 0.4274 (MSE: 0.3809, KL: 0.0252)
+  Val   — Loss: 0.4465 (MSE: 0.4172, KL: 0.0199)
+  Val   — PLCC: 0.8481 | SROCC: 0.8597 | KROCC: 0.6771 | Agg: 2.3849
+  → New best! Saving checkpoint. (Aggregate: 2.3849)
+
+Epoch 24/100 | CT_MUSIQ | LR: 4.69e-05
+  Train — Loss: 0.4429 (MSE: 0.3985, KL: 0.0255)
+  Val   — Loss: 0.4094 (MSE: 0.3808, KL: 0.0206)
+  Val   — PLCC: 0.8550 | SROCC: 0.8691 | KROCC: 0.6879 | Agg: 2.4120
+  → New best! Saving checkpoint. (Aggregate: 2.4120)
+
+Epoch 25/100 | CT_MUSIQ | LR: 4.64e-05
+  Train — Loss: 0.4175 (MSE: 0.3718, KL: 0.0301)
+  Val   — Loss: 0.3797 (MSE: 0.3517, KL: 0.0203)
+  Val   — PLCC: 0.8608 | SROCC: 0.8763 | KROCC: 0.6972 | Agg: 2.4343
+  → New best! Saving checkpoint. (Aggregate: 2.4343)
+
+Epoch 26/100 | CT_MUSIQ | LR: 4.60e-05
+  Train — Loss: 0.4276 (MSE: 0.3821, KL: 0.0254)
+  Val   — Loss: 0.3541 (MSE: 0.3267, KL: 0.0203)
+  Val   — PLCC: 0.8671 | SROCC: 0.8831 | KROCC: 0.7072 | Agg: 2.4574
+  → New best! Saving checkpoint. (Aggregate: 2.4574)
+
+Epoch 27/100 | CT_MUSIQ | LR: 4.55e-05
+  Train — Loss: 0.4318 (MSE: 0.3851, KL: 0.0250)
+  Val   — Loss: 0.3330 (MSE: 0.3059, KL: 0.0204)
+  Val   — PLCC: 0.8732 | SROCC: 0.8881 | KROCC: 0.7153 | Agg: 2.4766
+  → New best! Saving checkpoint. (Aggregate: 2.4766)
+
+Epoch 28/100 | CT_MUSIQ | LR: 4.50e-05
+  Train — Loss: 0.4299 (MSE: 0.3914, KL: 0.0196)
+  Val   — Loss: 0.3161 (MSE: 0.2892, KL: 0.0206)
+  Val   — PLCC: 0.8784 | SROCC: 0.8931 | KROCC: 0.7219 | Agg: 2.4934
+  → New best! Saving checkpoint. (Aggregate: 2.4934)
+
+Epoch 29/100 | CT_MUSIQ | LR: 4.45e-05
+  Train — Loss: 0.3634 (MSE: 0.3223, KL: 0.0229)
+  Val   — Loss: 0.3015 (MSE: 0.2747, KL: 0.0214)
+  Val   — PLCC: 0.8828 | SROCC: 0.8968 | KROCC: 0.7293 | Agg: 2.5089
+  → New best! Saving checkpoint. (Aggregate: 2.5089)
+
+Epoch 30/100 | CT_MUSIQ | LR: 4.40e-05
+  Train — Loss: 0.3947 (MSE: 0.3549, KL: 0.0291)
+  Val   — Loss: 0.2904 (MSE: 0.2636, KL: 0.0225)
+  Val   — PLCC: 0.8865 | SROCC: 0.9018 | KROCC: 0.7373 | Agg: 2.5256
+  → New best! Saving checkpoint. (Aggregate: 2.5256)
+
+Epoch 31/100 | CT_MUSIQ | LR: 4.34e-05
+  Train — Loss: 0.4182 (MSE: 0.3774, KL: 0.0246)
+  Val   — Loss: 0.2808 (MSE: 0.2544, KL: 0.0214)
+  Val   — PLCC: 0.8900 | SROCC: 0.9068 | KROCC: 0.7448 | Agg: 2.5417
+  → New best! Saving checkpoint. (Aggregate: 2.5417)
+
+Epoch 32/100 | CT_MUSIQ | LR: 4.28e-05
+  Train — Loss: 0.3959 (MSE: 0.3529, KL: 0.0228)
+  Val   — Loss: 0.2741 (MSE: 0.2480, KL: 0.0199)
+  Val   — PLCC: 0.8926 | SROCC: 0.9091 | KROCC: 0.7493 | Agg: 2.5510
+  → New best! Saving checkpoint. (Aggregate: 2.5510)
+
+Epoch 33/100 | CT_MUSIQ | LR: 4.22e-05
+  Train — Loss: 0.3561 (MSE: 0.3133, KL: 0.0254)
+  Val   — Loss: 0.2680 (MSE: 0.2420, KL: 0.0188)
+  Val   — PLCC: 0.8957 | SROCC: 0.9117 | KROCC: 0.7535 | Agg: 2.5609
+  → New best! Saving checkpoint. (Aggregate: 2.5609)
+
+Epoch 34/100 | CT_MUSIQ | LR: 4.16e-05
+  Train — Loss: 0.3639 (MSE: 0.3232, KL: 0.0189)
+  Val   — Loss: 0.2638 (MSE: 0.2380, KL: 0.0179)
+  Val   — PLCC: 0.8988 | SROCC: 0.9155 | KROCC: 0.7589 | Agg: 2.5733
+  → New best! Saving checkpoint. (Aggregate: 2.5733)
+
+Epoch 35/100 | CT_MUSIQ | LR: 4.10e-05
+  Train — Loss: 0.3276 (MSE: 0.2917, KL: 0.0213)
+  Val   — Loss: 0.2592 (MSE: 0.2336, KL: 0.0168)
+  Val   — PLCC: 0.9022 | SROCC: 0.9172 | KROCC: 0.7612 | Agg: 2.5806
+  → New best! Saving checkpoint. (Aggregate: 2.5806)
+
+Epoch 36/100 | CT_MUSIQ | LR: 4.03e-05
+  Train — Loss: 0.3868 (MSE: 0.3475, KL: 0.0223)
+  Val   — Loss: 0.2550 (MSE: 0.2295, KL: 0.0158)
+  Val   — PLCC: 0.9053 | SROCC: 0.9206 | KROCC: 0.7665 | Agg: 2.5924
+  → New best! Saving checkpoint. (Aggregate: 2.5924)
+
+Epoch 37/100 | CT_MUSIQ | LR: 3.96e-05
+  Train — Loss: 0.3573 (MSE: 0.3183, KL: 0.0253)
+  Val   — Loss: 0.2504 (MSE: 0.2250, KL: 0.0145)
+  Val   — PLCC: 0.9080 | SROCC: 0.9222 | KROCC: 0.7687 | Agg: 2.5990
+  → New best! Saving checkpoint. (Aggregate: 2.5990)
+
+Epoch 38/100 | CT_MUSIQ | LR: 3.89e-05
+  Train — Loss: 0.3706 (MSE: 0.3307, KL: 0.0210)
+  Val   — Loss: 0.2466 (MSE: 0.2214, KL: 0.0135)
+  Val   — PLCC: 0.9105 | SROCC: 0.9238 | KROCC: 0.7710 | Agg: 2.6053
+  → New best! Saving checkpoint. (Aggregate: 2.6053)
+
+Epoch 39/100 | CT_MUSIQ | LR: 3.82e-05
+  Train — Loss: 0.3330 (MSE: 0.2941, KL: 0.0181)
+  Val   — Loss: 0.2411 (MSE: 0.2160, KL: 0.0125)
+  Val   — PLCC: 0.9136 | SROCC: 0.9252 | KROCC: 0.7737 | Agg: 2.6125
+  → New best! Saving checkpoint. (Aggregate: 2.6125)
+
+Epoch 40/100 | CT_MUSIQ | LR: 3.75e-05
+  Train — Loss: 0.3320 (MSE: 0.2911, KL: 0.0275)
+  Val   — Loss: 0.2359 (MSE: 0.2109, KL: 0.0113)
+  Val   — PLCC: 0.9164 | SROCC: 0.9269 | KROCC: 0.7761 | Agg: 2.6194
+  → New best! Saving checkpoint. (Aggregate: 2.6194)
+
+Epoch 41/100 | CT_MUSIQ | LR: 3.68e-05
+  Train — Loss: 0.3191 (MSE: 0.2825, KL: 0.0170)
+  Val   — Loss: 0.2299 (MSE: 0.2051, KL: 0.0100)
+  Val   — PLCC: 0.9189 | SROCC: 0.9283 | KROCC: 0.7786 | Agg: 2.6258
+  → New best! Saving checkpoint. (Aggregate: 2.6258)
+
+Epoch 42/100 | CT_MUSIQ | LR: 3.60e-05
+  Train — Loss: 0.3180 (MSE: 0.2842, KL: 0.0194)
+  Val   — Loss: 0.2241 (MSE: 0.1995, KL: 0.0088)
+  Val   — PLCC: 0.9216 | SROCC: 0.9302 | KROCC: 0.7823 | Agg: 2.6341
+  → New best! Saving checkpoint. (Aggregate: 2.6341)
+
+Epoch 43/100 | CT_MUSIQ | LR: 3.53e-05
+  Train — Loss: 0.3095 (MSE: 0.2735, KL: 0.0179)
+  Val   — Loss: 0.2167 (MSE: 0.1923, KL: 0.0078)
+  Val   — PLCC: 0.9241 | SROCC: 0.9319 | KROCC: 0.7849 | Agg: 2.6410
+  → New best! Saving checkpoint. (Aggregate: 2.6410)
+
+Epoch 44/100 | CT_MUSIQ | LR: 3.45e-05
+  Train — Loss: 0.3129 (MSE: 0.2744, KL: 0.0202)
+  Val   — Loss: 0.2121 (MSE: 0.1879, KL: 0.0070)
+  Val   — PLCC: 0.9262 | SROCC: 0.9328 | KROCC: 0.7869 | Agg: 2.6459
+  → New best! Saving checkpoint. (Aggregate: 2.6459)
+
+Epoch 45/100 | CT_MUSIQ | LR: 3.37e-05
+  Train — Loss: 0.3004 (MSE: 0.2651, KL: 0.0186)
+  Val   — Loss: 0.2052 (MSE: 0.1812, KL: 0.0062)
+  Val   — PLCC: 0.9286 | SROCC: 0.9341 | KROCC: 0.7893 | Agg: 2.6519
+  → New best! Saving checkpoint. (Aggregate: 2.6519)
+
+Epoch 46/100 | CT_MUSIQ | LR: 3.29e-05
+  Train — Loss: 0.2919 (MSE: 0.2590, KL: 0.0167)
+  Val   — Loss: 0.1995 (MSE: 0.1757, KL: 0.0055)
+  Val   — PLCC: 0.9309 | SROCC: 0.9354 | KROCC: 0.7912 | Agg: 2.6575
+  → New best! Saving checkpoint. (Aggregate: 2.6575)
+
+Epoch 47/100 | CT_MUSIQ | LR: 3.21e-05
+  Train — Loss: 0.2698 (MSE: 0.2380, KL: 0.0203)
+  Val   — Loss: 0.1942 (MSE: 0.1707, KL: 0.0051)
+  Val   — PLCC: 0.9329 | SROCC: 0.9367 | KROCC: 0.7941 | Agg: 2.6638
+  → New best! Saving checkpoint. (Aggregate: 2.6638)
+
+Epoch 48/100 | CT_MUSIQ | LR: 3.13e-05
+  Train — Loss: 0.2696 (MSE: 0.2371, KL: 0.0147)
+  Val   — Loss: 0.1898 (MSE: 0.1665, KL: 0.0047)
+  Val   — PLCC: 0.9350 | SROCC: 0.9380 | KROCC: 0.7968 | Agg: 2.6698
+  → New best! Saving checkpoint. (Aggregate: 2.6698)
+
+Epoch 49/100 | CT_MUSIQ | LR: 3.05e-05
+  Train — Loss: 0.3213 (MSE: 0.2866, KL: 0.0175)
+  Val   — Loss: 0.1839 (MSE: 0.1608, KL: 0.0044)
+  Val   — PLCC: 0.9368 | SROCC: 0.9395 | KROCC: 0.7996 | Agg: 2.6759
+  → New best! Saving checkpoint. (Aggregate: 2.6759)
+
+Epoch 50/100 | CT_MUSIQ | LR: 2.97e-05
+  Train — Loss: 0.2980 (MSE: 0.2638, KL: 0.0177)
+  Val   — Loss: 0.1779 (MSE: 0.1551, KL: 0.0040)
+  Val   — PLCC: 0.9384 | SROCC: 0.9402 | KROCC: 0.8010 | Agg: 2.6796
+  → New best! Saving checkpoint. (Aggregate: 2.6796)
+
+Epoch 51/100 | CT_MUSIQ | LR: 2.88e-05
+  Train — Loss: 0.2849 (MSE: 0.2544, KL: 0.0162)
+  Val   — Loss: 0.1735 (MSE: 0.1510, KL: 0.0037)
+  Val   — PLCC: 0.9397 | SROCC: 0.9405 | KROCC: 0.8018 | Agg: 2.6820
+  → New best! Saving checkpoint. (Aggregate: 2.6820)
+
+Epoch 52/100 | CT_MUSIQ | LR: 2.80e-05
+  Train — Loss: 0.2789 (MSE: 0.2463, KL: 0.0157)
+  Val   — Loss: 0.1698 (MSE: 0.1475, KL: 0.0034)
+  Val   — PLCC: 0.9409 | SROCC: 0.9413 | KROCC: 0.8033 | Agg: 2.6855
+  → New best! Saving checkpoint. (Aggregate: 2.6855)
+
+Epoch 53/100 | CT_MUSIQ | LR: 2.72e-05
+  Train — Loss: 0.2608 (MSE: 0.2286, KL: 0.0147)
+  Val   — Loss: 0.1675 (MSE: 0.1454, KL: 0.0033)
+  Val   — PLCC: 0.9419 | SROCC: 0.9423 | KROCC: 0.8055 | Agg: 2.6898
+  → New best! Saving checkpoint. (Aggregate: 2.6898)
+
+Epoch 54/100 | CT_MUSIQ | LR: 2.63e-05
+  Train — Loss: 0.2485 (MSE: 0.2158, KL: 0.0158)
+  Val   — Loss: 0.1660 (MSE: 0.1441, KL: 0.0032)
+  Val   — PLCC: 0.9427 | SROCC: 0.9425 | KROCC: 0.8061 | Agg: 2.6912
+  → New best! Saving checkpoint. (Aggregate: 2.6912)
+
+Epoch 55/100 | CT_MUSIQ | LR: 2.55e-05
+  Train — Loss: 0.2644 (MSE: 0.2305, KL: 0.0191)
+  Val   — Loss: 0.1638 (MSE: 0.1421, KL: 0.0030)
+  Val   — PLCC: 0.9436 | SROCC: 0.9432 | KROCC: 0.8075 | Agg: 2.6943
+  → New best! Saving checkpoint. (Aggregate: 2.6943)
+
+Epoch 56/100 | CT_MUSIQ | LR: 2.47e-05
+  Train — Loss: 0.2482 (MSE: 0.2167, KL: 0.0146)
+  Val   — Loss: 0.1628 (MSE: 0.1413, KL: 0.0029)
+  Val   — PLCC: 0.9446 | SROCC: 0.9439 | KROCC: 0.8095 | Agg: 2.6980
+  → New best! Saving checkpoint. (Aggregate: 2.6980)
+
+Epoch 57/100 | CT_MUSIQ | LR: 2.38e-05
+  Train — Loss: 0.3065 (MSE: 0.2718, KL: 0.0209)
+  Val   — Loss: 0.1621 (MSE: 0.1409, KL: 0.0028)
+  Val   — PLCC: 0.9454 | SROCC: 0.9442 | KROCC: 0.8109 | Agg: 2.7005
+  → New best! Saving checkpoint. (Aggregate: 2.7005)
+
+Epoch 58/100 | CT_MUSIQ | LR: 2.30e-05
+  Train — Loss: 0.2613 (MSE: 0.2289, KL: 0.0150)
+  Val   — Loss: 0.1614 (MSE: 0.1404, KL: 0.0028)
+  Val   — PLCC: 0.9460 | SROCC: 0.9443 | KROCC: 0.8114 | Agg: 2.7017
+  → New best! Saving checkpoint. (Aggregate: 2.7017)
+
+Epoch 59/100 | CT_MUSIQ | LR: 2.22e-05
+  Train — Loss: 0.2445 (MSE: 0.2125, KL: 0.0132)
+  Val   — Loss: 0.1597 (MSE: 0.1388, KL: 0.0027)
+  Val   — PLCC: 0.9467 | SROCC: 0.9446 | KROCC: 0.8125 | Agg: 2.7038
+  → New best! Saving checkpoint. (Aggregate: 2.7038)
+
+Epoch 60/100 | CT_MUSIQ | LR: 2.13e-05
+  Train — Loss: 0.2473 (MSE: 0.2151, KL: 0.0145)
+  Val   — Loss: 0.1585 (MSE: 0.1377, KL: 0.0027)
+  Val   — PLCC: 0.9474 | SROCC: 0.9453 | KROCC: 0.8137 | Agg: 2.7064
+  → New best! Saving checkpoint. (Aggregate: 2.7064)
+
+Epoch 61/100 | CT_MUSIQ | LR: 2.05e-05
+  Train — Loss: 0.2630 (MSE: 0.2317, KL: 0.0125)
+  Val   — Loss: 0.1557 (MSE: 0.1351, KL: 0.0026)
+  Val   — PLCC: 0.9483 | SROCC: 0.9461 | KROCC: 0.8155 | Agg: 2.7099
+  → New best! Saving checkpoint. (Aggregate: 2.7099)
+
+Epoch 62/100 | CT_MUSIQ | LR: 1.97e-05
+  Train — Loss: 0.2453 (MSE: 0.2146, KL: 0.0141)
+  Val   — Loss: 0.1532 (MSE: 0.1328, KL: 0.0027)
+  Val   — PLCC: 0.9492 | SROCC: 0.9466 | KROCC: 0.8168 | Agg: 2.7126
+  → New best! Saving checkpoint. (Aggregate: 2.7126)
+
+Epoch 63/100 | CT_MUSIQ | LR: 1.89e-05
+  Train — Loss: 0.2230 (MSE: 0.1923, KL: 0.0142)
+  Val   — Loss: 0.1507 (MSE: 0.1305, KL: 0.0026)
+  Val   — PLCC: 0.9501 | SROCC: 0.9480 | KROCC: 0.8197 | Agg: 2.7178
+  → New best! Saving checkpoint. (Aggregate: 2.7178)
+
+Epoch 64/100 | CT_MUSIQ | LR: 1.81e-05
+  Train — Loss: 0.2124 (MSE: 0.1862, KL: 0.0157)
+  Val   — Loss: 0.1487 (MSE: 0.1287, KL: 0.0026)
+  Val   — PLCC: 0.9511 | SROCC: 0.9487 | KROCC: 0.8210 | Agg: 2.7208
+  → New best! Saving checkpoint. (Aggregate: 2.7208)
+
+Epoch 65/100 | CT_MUSIQ | LR: 1.73e-05
+  Train — Loss: 0.2159 (MSE: 0.1871, KL: 0.0139)
+  Val   — Loss: 0.1473 (MSE: 0.1275, KL: 0.0025)
+  Val   — PLCC: 0.9520 | SROCC: 0.9499 | KROCC: 0.8235 | Agg: 2.7255
+  → New best! Saving checkpoint. (Aggregate: 2.7255)
+
+Epoch 66/100 | CT_MUSIQ | LR: 1.65e-05
+  Train — Loss: 0.2155 (MSE: 0.1870, KL: 0.0148)
+  Val   — Loss: 0.1470 (MSE: 0.1274, KL: 0.0024)
+  Val   — PLCC: 0.9527 | SROCC: 0.9504 | KROCC: 0.8245 | Agg: 2.7276
+  → New best! Saving checkpoint. (Aggregate: 2.7276)
+
+Epoch 67/100 | CT_MUSIQ | LR: 1.57e-05
+  Train — Loss: 0.2346 (MSE: 0.2028, KL: 0.0147)
+  Val   — Loss: 0.1457 (MSE: 0.1263, KL: 0.0024)
+  Val   — PLCC: 0.9534 | SROCC: 0.9506 | KROCC: 0.8257 | Agg: 2.7298
+  → New best! Saving checkpoint. (Aggregate: 2.7298)
+
+Epoch 68/100 | CT_MUSIQ | LR: 1.50e-05
+  Train — Loss: 0.2230 (MSE: 0.1943, KL: 0.0139)
+  Val   — Loss: 0.1430 (MSE: 0.1237, KL: 0.0023)
+  Val   — PLCC: 0.9543 | SROCC: 0.9512 | KROCC: 0.8274 | Agg: 2.7329
+  → New best! Saving checkpoint. (Aggregate: 2.7329)
+
+Epoch 69/100 | CT_MUSIQ | LR: 1.42e-05
+  Train — Loss: 0.1919 (MSE: 0.1655, KL: 0.0143)
+  Val   — Loss: 0.1400 (MSE: 0.1209, KL: 0.0022)
+  Val   — PLCC: 0.9552 | SROCC: 0.9515 | KROCC: 0.8281 | Agg: 2.7348
+  → New best! Saving checkpoint. (Aggregate: 2.7348)
+
+Epoch 70/100 | CT_MUSIQ | LR: 1.35e-05
+  Train — Loss: 0.2025 (MSE: 0.1773, KL: 0.0152)
+  Val   — Loss: 0.1374 (MSE: 0.1185, KL: 0.0022)
+  Val   — PLCC: 0.9561 | SROCC: 0.9525 | KROCC: 0.8304 | Agg: 2.7389
+  → New best! Saving checkpoint. (Aggregate: 2.7389)
+
+Epoch 71/100 | CT_MUSIQ | LR: 1.28e-05
+  Train — Loss: 0.2059 (MSE: 0.1783, KL: 0.0130)
+  Val   — Loss: 0.1365 (MSE: 0.1176, KL: 0.0022)
+  Val   — PLCC: 0.9567 | SROCC: 0.9532 | KROCC: 0.8324 | Agg: 2.7423
+  → New best! Saving checkpoint. (Aggregate: 2.7423)
+
+Epoch 72/100 | CT_MUSIQ | LR: 1.21e-05
+  Train — Loss: 0.1912 (MSE: 0.1645, KL: 0.0129)
+  Val   — Loss: 0.1359 (MSE: 0.1171, KL: 0.0022)
+  Val   — PLCC: 0.9571 | SROCC: 0.9533 | KROCC: 0.8325 | Agg: 2.7430
+  → New best! Saving checkpoint. (Aggregate: 2.7430)
+
+Epoch 73/100 | CT_MUSIQ | LR: 1.14e-05
+  Train — Loss: 0.1978 (MSE: 0.1713, KL: 0.0119)
+  Val   — Loss: 0.1346 (MSE: 0.1159, KL: 0.0022)
+  Val   — PLCC: 0.9577 | SROCC: 0.9540 | KROCC: 0.8343 | Agg: 2.7460
+  → New best! Saving checkpoint. (Aggregate: 2.7460)
+
+Epoch 74/100 | CT_MUSIQ | LR: 1.07e-05
+  Train — Loss: 0.1822 (MSE: 0.1539, KL: 0.0135)
+  Val   — Loss: 0.1332 (MSE: 0.1146, KL: 0.0023)
+  Val   — PLCC: 0.9585 | SROCC: 0.9545 | KROCC: 0.8355 | Agg: 2.7485
+  → New best! Saving checkpoint. (Aggregate: 2.7485)
+
+Epoch 75/100 | CT_MUSIQ | LR: 1.00e-05
+  Train — Loss: 0.2160 (MSE: 0.1856, KL: 0.0129)
+  Val   — Loss: 0.1320 (MSE: 0.1136, KL: 0.0023)
+  Val   — PLCC: 0.9590 | SROCC: 0.9558 | KROCC: 0.8388 | Agg: 2.7537
+  → New best! Saving checkpoint. (Aggregate: 2.7537)
+
+Epoch 76/100 | CT_MUSIQ | LR: 9.40e-06
+  Train — Loss: 0.1842 (MSE: 0.1602, KL: 0.0127)
+  Val   — Loss: 0.1314 (MSE: 0.1131, KL: 0.0023)
+  Val   — PLCC: 0.9595 | SROCC: 0.9560 | KROCC: 0.8399 | Agg: 2.7553
+  → New best! Saving checkpoint. (Aggregate: 2.7553)
+
+Epoch 77/100 | CT_MUSIQ | LR: 8.78e-06
+  Train — Loss: 0.1924 (MSE: 0.1665, KL: 0.0120)
+  Val   — Loss: 0.1315 (MSE: 0.1132, KL: 0.0024)
+  Val   — PLCC: 0.9598 | SROCC: 0.9564 | KROCC: 0.8409 | Agg: 2.7572
+  → New best! Saving checkpoint. (Aggregate: 2.7572)
+
+Epoch 78/100 | CT_MUSIQ | LR: 8.18e-06
+  Train — Loss: 0.1859 (MSE: 0.1600, KL: 0.0120)
+  Val   — Loss: 0.1312 (MSE: 0.1129, KL: 0.0024)
+  Val   — PLCC: 0.9601 | SROCC: 0.9568 | KROCC: 0.8421 | Agg: 2.7591
+  → New best! Saving checkpoint. (Aggregate: 2.7591)
+
+Epoch 79/100 | CT_MUSIQ | LR: 7.59e-06
+  Train — Loss: 0.1787 (MSE: 0.1530, KL: 0.0124)
+  Val   — Loss: 0.1308 (MSE: 0.1125, KL: 0.0024)
+  Val   — PLCC: 0.9605 | SROCC: 0.9569 | KROCC: 0.8427 | Agg: 2.7601
+  → New best! Saving checkpoint. (Aggregate: 2.7601)
+
+Epoch 80/100 | CT_MUSIQ | LR: 7.03e-06
+  Train — Loss: 0.1739 (MSE: 0.1486, KL: 0.0119)
+  Val   — Loss: 0.1306 (MSE: 0.1123, KL: 0.0024)
+  Val   — PLCC: 0.9607 | SROCC: 0.9574 | KROCC: 0.8442 | Agg: 2.7623
+  → New best! Saving checkpoint. (Aggregate: 2.7623)
+
+Epoch 81/100 | CT_MUSIQ | LR: 6.50e-06
+  Train — Loss: 0.1744 (MSE: 0.1503, KL: 0.0119)
+  Val   — Loss: 0.1307 (MSE: 0.1124, KL: 0.0025)
+  Val   — PLCC: 0.9610 | SROCC: 0.9575 | KROCC: 0.8447 | Agg: 2.7632
+  → New best! Saving checkpoint. (Aggregate: 2.7632)
+
+Epoch 82/100 | CT_MUSIQ | LR: 5.98e-06
+  Train — Loss: 0.1773 (MSE: 0.1523, KL: 0.0124)
+  Val   — Loss: 0.1306 (MSE: 0.1123, KL: 0.0025)
+  Val   — PLCC: 0.9612 | SROCC: 0.9575 | KROCC: 0.8447 | Agg: 2.7634
+  → New best! Saving checkpoint. (Aggregate: 2.7634)
+
+Epoch 83/100 | CT_MUSIQ | LR: 5.48e-06
+  Train — Loss: 0.1875 (MSE: 0.1615, KL: 0.0125)
+  Val   — Loss: 0.1309 (MSE: 0.1126, KL: 0.0026)
+  Val   — PLCC: 0.9613 | SROCC: 0.9575 | KROCC: 0.8451 | Agg: 2.7639
+  → New best! Saving checkpoint. (Aggregate: 2.7639)
+
+Epoch 84/100 | CT_MUSIQ | LR: 5.01e-06
+  Train — Loss: 0.1785 (MSE: 0.1517, KL: 0.0115)
+  Val   — Loss: 0.1312 (MSE: 0.1129, KL: 0.0027)
+  Val   — PLCC: 0.9613 | SROCC: 0.9574 | KROCC: 0.8449 | Agg: 2.7637
+  → No improvement. Patience: 1/20
+
+Epoch 85/100 | CT_MUSIQ | LR: 4.57e-06
+  Train — Loss: 0.1694 (MSE: 0.1448, KL: 0.0129)
+  Val   — Loss: 0.1312 (MSE: 0.1129, KL: 0.0027)
+  Val   — PLCC: 0.9613 | SROCC: 0.9576 | KROCC: 0.8450 | Agg: 2.7639
+  → No improvement. Patience: 2/20
+
+Epoch 86/100 | CT_MUSIQ | LR: 4.14e-06
+  Train — Loss: 0.1674 (MSE: 0.1444, KL: 0.0118)
+  Val   — Loss: 0.1312 (MSE: 0.1129, KL: 0.0027)
+  Val   — PLCC: 0.9614 | SROCC: 0.9575 | KROCC: 0.8449 | Agg: 2.7638
+  → No improvement. Patience: 3/20
+
+Epoch 87/100 | CT_MUSIQ | LR: 3.75e-06
+  Train — Loss: 0.1815 (MSE: 0.1542, KL: 0.0120)
+  Val   — Loss: 0.1307 (MSE: 0.1123, KL: 0.0028)
+  Val   — PLCC: 0.9614 | SROCC: 0.9573 | KROCC: 0.8441 | Agg: 2.7628
+  → No improvement. Patience: 4/20
+
+Epoch 88/100 | CT_MUSIQ | LR: 3.37e-06
+  Train — Loss: 0.1763 (MSE: 0.1497, KL: 0.0125)
+  Val   — Loss: 0.1303 (MSE: 0.1119, KL: 0.0028)
+  Val   — PLCC: 0.9615 | SROCC: 0.9571 | KROCC: 0.8438 | Agg: 2.7624
+  → No improvement. Patience: 5/20
+
+Epoch 89/100 | CT_MUSIQ | LR: 3.03e-06
+  Train — Loss: 0.1701 (MSE: 0.1444, KL: 0.0116)
+  Val   — Loss: 0.1300 (MSE: 0.1115, KL: 0.0029)
+  Val   — PLCC: 0.9616 | SROCC: 0.9569 | KROCC: 0.8430 | Agg: 2.7614
+  → No improvement. Patience: 6/20
+
+Epoch 90/100 | CT_MUSIQ | LR: 2.71e-06
+  Train — Loss: 0.1614 (MSE: 0.1373, KL: 0.0117)
+  Val   — Loss: 0.1288 (MSE: 0.1104, KL: 0.0029)
+  Val   — PLCC: 0.9616 | SROCC: 0.9573 | KROCC: 0.8436 | Agg: 2.7625
+  → No improvement. Patience: 7/20
+
+Epoch 91/100 | CT_MUSIQ | LR: 2.41e-06
+  Train — Loss: 0.1728 (MSE: 0.1482, KL: 0.0124)
+  Val   — Loss: 0.1280 (MSE: 0.1096, KL: 0.0030)
+  Val   — PLCC: 0.9617 | SROCC: 0.9573 | KROCC: 0.8438 | Agg: 2.7628
+  → No improvement. Patience: 8/20
+
+Epoch 92/100 | CT_MUSIQ | LR: 2.15e-06
+  Train — Loss: 0.1593 (MSE: 0.1362, KL: 0.0115)
+  Val   — Loss: 0.1273 (MSE: 0.1088, KL: 0.0030)
+  Val   — PLCC: 0.9617 | SROCC: 0.9572 | KROCC: 0.8437 | Agg: 2.7626
+  → No improvement. Patience: 9/20
+
+Epoch 93/100 | CT_MUSIQ | LR: 1.91e-06
+  Train — Loss: 0.1603 (MSE: 0.1353, KL: 0.0116)
+  Val   — Loss: 0.1264 (MSE: 0.1079, KL: 0.0031)
+  Val   — PLCC: 0.9618 | SROCC: 0.9572 | KROCC: 0.8432 | Agg: 2.7621
+  → No improvement. Patience: 10/20
+
+Epoch 94/100 | CT_MUSIQ | LR: 1.70e-06
+  Train — Loss: 0.1474 (MSE: 0.1253, KL: 0.0120)
+  Val   — Loss: 0.1261 (MSE: 0.1076, KL: 0.0031)
+  Val   — PLCC: 0.9618 | SROCC: 0.9569 | KROCC: 0.8426 | Agg: 2.7613
+  → No improvement. Patience: 11/20
+
+Epoch 95/100 | CT_MUSIQ | LR: 1.51e-06
+  Train — Loss: 0.1649 (MSE: 0.1406, KL: 0.0122)
+  Val   — Loss: 0.1258 (MSE: 0.1073, KL: 0.0032)
+  Val   — PLCC: 0.9618 | SROCC: 0.9570 | KROCC: 0.8428 | Agg: 2.7617
+  → No improvement. Patience: 12/20
+
+Epoch 96/100 | CT_MUSIQ | LR: 1.36e-06
+  Train — Loss: 0.1747 (MSE: 0.1504, KL: 0.0113)
+  Val   — Loss: 0.1255 (MSE: 0.1070, KL: 0.0033)
+  Val   — PLCC: 0.9617 | SROCC: 0.9567 | KROCC: 0.8422 | Agg: 2.7606
+  → No improvement. Patience: 13/20
+
+Epoch 97/100 | CT_MUSIQ | LR: 1.23e-06
+  Train — Loss: 0.1624 (MSE: 0.1381, KL: 0.0117)
+  Val   — Loss: 0.1252 (MSE: 0.1067, KL: 0.0033)
+  Val   — PLCC: 0.9617 | SROCC: 0.9568 | KROCC: 0.8423 | Agg: 2.7608
+  → No improvement. Patience: 14/20
+
+Epoch 98/100 | CT_MUSIQ | LR: 1.13e-06
+  Train — Loss: 0.1565 (MSE: 0.1327, KL: 0.0119)
+  Val   — Loss: 0.1252 (MSE: 0.1066, KL: 0.0033)
+  Val   — PLCC: 0.9616 | SROCC: 0.9567 | KROCC: 0.8424 | Agg: 2.7607
+  → No improvement. Patience: 15/20
+
+Epoch 99/100 | CT_MUSIQ | LR: 1.06e-06
+  Train — Loss: 0.1583 (MSE: 0.1356, KL: 0.0110)
+  Val   — Loss: 0.1248 (MSE: 0.1063, KL: 0.0033)
+  Val   — PLCC: 0.9616 | SROCC: 0.9570 | KROCC: 0.8433 | Agg: 2.7619
+  → No improvement. Patience: 16/20
+
+Epoch 100/100 | CT_MUSIQ | LR: 1.01e-06
+  Train — Loss: 0.1449 (MSE: 0.1237, KL: 0.0116)
+  Val   — Loss: 0.1245 (MSE: 0.1060, KL: 0.0034)
+  Val   — PLCC: 0.9616 | SROCC: 0.9569 | KROCC: 0.8435 | Agg: 2.7620
+  → No improvement. Patience: 17/20
+
+======================================================================
+Training Complete!
+======================================================================
+Best validation aggregate: 2.7639
+Best model saved to: C:\Users\Samiul\Desktop\Sichuan_University\Thesis\ProjectRunningFolder_Programming\results\ct_musiq\ct_musiq_best.pth
+Training log saved to: C:\Users\Samiul\Desktop\Sichuan_University\Thesis\ProjectRunningFolder_Programming\results\ct_musiq\ct_musiq_training_log.csv
+
+To evaluate ct_musiq on test set, run:
+  python evaluate.py --model ct_musiq
