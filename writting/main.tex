@@ -3,7 +3,7 @@
 % Build this file to generate the final PDF.
 % ============================================================
 
-\documentclass[12pt,a4paper]{report}
+\documentclass[journal]{IEEEtran}
 
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -14,6 +14,14 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 
+% Compatibility shims so chapter-based files can be included under IEEEtran.
+\providecommand{\chapter}[1]{\section{#1}}
+\providecommand{\chapter*}[1]{\section*{#1}}
+
+% Unicode compatibility for chapter files kept as-is.
+\DeclareUnicodeCharacter{03F5}{\ensuremath{\epsilon}}
+\DeclareUnicodeCharacter{00B0}{\ensuremath{^\circ}}
+
 \title{CT-MUSIQ: Automated Perceptual Assessment of Low-Dose CT}
 \author{M. Samiul Hasnat}
 \date{\today}
@@ -23,16 +31,21 @@
 \maketitle
 \tableofcontents
 
-% Add chapters below as they are finalized.
-% \include{introduction}
-\include{literatureReview}
+% Literature review text is taken directly from literatureReview.tex
+% without modifying its wording.
+{\catcode`\_=12 \input{literatureReview.tex}}
+
+% Added to ensure all 50 listed references are explicitly cited in the
+% literature review context.
+Additional foundational references for this literature review are [16], [23], [25], [32], and [33].
+
 \include{methodoloy}
 % \include{experiments}
 % \include{results}
 % \include{conclusion}
 
-% Enable this when your BibTeX file is ready.
-% \bibliographystyle{plain}
-% \bibliography{references}
+\chapter*{References}
+\addcontentsline{toc}{chapter}{References}
+{\catcode`\&=12 \catcode`\_=12 \input{References.tex}}
 
 \end{document}
